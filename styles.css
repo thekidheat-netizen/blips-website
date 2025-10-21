@@ -40,7 +40,7 @@ nav {
 .logo-img {
     height: 50px;
     width: auto;
-    filter: brightness(0) invert(1) drop-shadow(0 0 10px rgba(255,255,255,0.3));
+    filter: drop-shadow(0 0 10px rgba(255,255,255,0.3));
     transition: transform 0.3s ease;
 }
 
@@ -57,16 +57,16 @@ nav {
 .hero-logo-img {
     height: 200px;
     width: auto;
-    filter: brightness(0) invert(1) drop-shadow(0 0 30px rgba(0, 212, 255, 0.6)) drop-shadow(0 0 60px rgba(0, 212, 255, 0.3));
+    filter: drop-shadow(0 0 30px rgba(0, 212, 255, 0.6)) drop-shadow(0 0 60px rgba(0, 212, 255, 0.3));
     animation: logoGlow 3s ease-in-out infinite;
 }
 
 @keyframes logoGlow {
     0%, 100% {
-        filter: brightness(0) invert(1) drop-shadow(0 0 30px rgba(0, 212, 255, 0.6)) drop-shadow(0 0 60px rgba(0, 212, 255, 0.3));
+        filter: drop-shadow(0 0 30px rgba(0, 212, 255, 0.6)) drop-shadow(0 0 60px rgba(0, 212, 255, 0.3));
     }
     50% {
-        filter: brightness(0) invert(1) drop-shadow(0 0 40px rgba(0, 212, 255, 0.8)) drop-shadow(0 0 80px rgba(0, 212, 255, 0.4));
+        filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.8)) drop-shadow(0 0 80px rgba(0, 212, 255, 0.4));
     }
 }
 
