@@ -2660,7 +2660,7 @@
                         <tbody>
             `;
 
-            allAdminDrops.forEach(drop => {
+            allAdminDrops.forEach((drop, index) => {
                 const isExpired = drop.expires_at && new Date(drop.expires_at) < new Date();
                 const isViewLimitReached = drop.view_limit && drop.views_count >= drop.view_limit;
                 const statusColor = drop.is_active && !isExpired && !isViewLimitReached ? '#4CAF50' : '#999';
@@ -2700,7 +2700,13 @@
                             ${drop.expires_at ? new Date(drop.expires_at).toLocaleString() : 'Never'}
                         </td>
                         <td style="padding: 12px; text-align: center;">
-                            <div style="display: flex; gap: 8px; justify-content: center;">
+                            <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+                                <button
+                                    class="btn btn-info"
+                                    onclick="toggleViewerDetails('${drop.id}', ${index})"
+                                    style="padding: 6px 12px; font-size: 12px;">
+                                    View Details
+                                </button>
                                 <button
                                     class="btn ${drop.is_active ? 'btn-warning' : 'btn-success'}"
                                     onclick="toggleDropActive('${drop.id}', ${!drop.is_active})"
@@ -2713,6 +2719,16 @@
                                     style="padding: 6px 12px; font-size: 12px;">
                                     Delete
                                 </button>
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Viewer Details Row (Hidden by default) -->
+                    <tr id="viewers-${drop.id}" style="display: none;">
+                        <td colspan="8" style="padding: 20px; background: #f9f9f9; border-bottom: 2px solid #E0E0E0;">
+                            <div id="viewers-content-${drop.id}">
+                                <div style="text-align: center; color: #999;">
+                                    Loading viewer data...
+                                </div>
                             </div>
                         </td>
                     </tr>
@@ -2851,6 +2867,144 @@
                 console.error('Error deleting drop:', error);
                 alert('Failed to delete drop: ' + error.message);
             }
+        }
+
+        async function toggleViewerDetails(dropId, index) {
+            const viewerRow = document.getElementById(`viewers-${dropId}`);
+
+            if (viewerRow.style.display === 'none') {
+                // Show the row and load viewer data
+                viewerRow.style.display = 'table-row';
+                await loadViewerData(dropId);
+            } else {
+                // Hide the row
+                viewerRow.style.display = 'none';
+            }
+        }
+
+        async function loadViewerData(dropId) {
+            const contentDiv = document.getElementById(`viewers-content-${dropId}`);
+
+            try {
+                // Fetch viewer data with user information
+                const { data: views, error } = await supabaseClient
+                    .from('admin_drop_views')
+                    .select(`
+                        *,
+                        viewer:users!admin_drop_views_viewer_id_fkey(id, username, email, avatar_url)
+                    `)
+                    .eq('admin_drop_id', dropId)
+                    .order('viewed_at', { ascending: false });
+
+                if (error) {
+                    console.error('Error loading viewer data:', error);
+                    contentDiv.innerHTML = `
+                        <div style="text-align: center; color: #f44336;">
+                            Failed to load viewer data: ${error.message}
+                        </div>
+                    `;
+                    return;
+                }
+
+                if (!views || views.length === 0) {
+                    contentDiv.innerHTML = `
+                        <div style="text-align: center; color: #999; padding: 20px;">
+                            <p style="font-size: 16px; margin-bottom: 10px;">No viewers yet</p>
+                            <p style="font-size: 14px;">This drop has not been viewed by any users</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Display viewer data in a nice table
+                let html = `
+                    <div style="margin-bottom: 15px;">
+                        <h4 style="color: #333; margin-bottom: 15px;">
+                            👁️ Viewer Analytics (${views.length} total ${views.length === 1 ? 'view' : 'views'})
+                        </h4>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
+                            <thead>
+                                <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                    <th style="padding: 12px; text-align: left;">#</th>
+                                    <th style="padding: 12px; text-align: left;">User</th>
+                                    <th style="padding: 12px; text-align: left;">Email</th>
+                                    <th style="padding: 12px; text-align: left;">Viewed At</th>
+                                    <th style="padding: 12px; text-align: left;">Time Ago</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                views.forEach((view, idx) => {
+                    const viewedDate = new Date(view.viewed_at);
+                    const timeAgo = getTimeAgo(viewedDate);
+                    const viewer = view.viewer || {};
+
+                    html += `
+                        <tr style="border-bottom: 1px solid #E0E0E0;">
+                            <td style="padding: 12px; color: #666;">${idx + 1}</td>
+                            <td style="padding: 12px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    ${viewer.avatar_url
+                                        ? `<img src="${viewer.avatar_url}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">`
+                                        : `<div style="width: 32px; height: 32px; border-radius: 50%; background: #FF6B9D; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold;">${viewer.username?.charAt(0).toUpperCase() || '?'}</div>`
+                                    }
+                                    <strong style="color: #333;">@${viewer.username || 'Unknown'}</strong>
+                                </div>
+                            </td>
+                            <td style="padding: 12px; color: #666; font-size: 13px;">${viewer.email || 'N/A'}</td>
+                            <td style="padding: 12px; color: #666; font-size: 13px;">
+                                ${viewedDate.toLocaleString()}
+                            </td>
+                            <td style="padding: 12px; color: #999; font-size: 13px; font-style: italic;">
+                                ${timeAgo}
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                contentDiv.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading viewer data:', error);
+                contentDiv.innerHTML = `
+                    <div style="text-align: center; color: #f44336;">
+                        Failed to load viewer data: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        function getTimeAgo(date) {
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+
+            if (seconds < 60) return 'just now';
+
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+
+            const days = Math.floor(hours / 24);
+            if (days < 7) return `${days} day${days !== 1 ? 's' : ''} ago`;
+
+            const weeks = Math.floor(days / 7);
+            if (weeks < 4) return `${weeks} week${weeks !== 1 ? 's' : ''} ago`;
+
+            const months = Math.floor(days / 30);
+            if (months < 12) return `${months} month${months !== 1 ? 's' : ''} ago`;
+
+            const years = Math.floor(days / 365);
+            return `${years} year${years !== 1 ? 's' : ''} ago`;
         }
 
         // ===== End Admin Drops Functions =====
