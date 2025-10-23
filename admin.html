@@ -608,6 +608,11 @@
                         <div style="background: linear-gradient(135deg, #FF6B9D 0%, #FFA06B 100%); padding: 25px; border-radius: 12px; margin-bottom: 30px; color: white;">
                             <h3 style="margin-bottom: 20px; font-size: 20px;">Place New Drop</h3>
 
+                            <!-- Address Search -->
+                            <div style="margin-bottom: 15px;">
+                                <input type="text" id="addressSearch" placeholder="🔍 Search for an address..." style="width: 100%; padding: 15px; border: 2px solid rgba(255,255,255,0.3); border-radius: 8px; font-size: 15px; background: rgba(255,255,255,0.95); color: #333;">
+                            </div>
+
                             <!-- Map Container -->
                             <div id="dropMap" style="width: 100%; height: 450px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);"></div>
 
@@ -631,6 +636,12 @@
                                 <div style="margin-bottom: 15px;">
                                     <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #FF6B9D;">Description</label>
                                     <textarea id="dropDescription" placeholder="Enter drop description" rows="3" style="width: 100%; padding: 12px; border: 2px solid #E0E0E0; border-radius: 6px; font-size: 14px; resize: vertical;"></textarea>
+                                </div>
+
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #FF6B9D;">📹 Drop Media (optional)</label>
+                                    <input type="file" id="dropMedia" accept="video/*,image/*" style="width: 100%; padding: 12px; border: 2px solid #E0E0E0; border-radius: 6px; font-size: 14px; background: white;">
+                                    <div id="mediaUploadProgress" style="display: none; margin-top: 10px; padding: 10px; background: #E3F2FD; border-radius: 6px; color: #1976D2; font-size: 13px;"></div>
                                 </div>
 
                                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 15px;">
@@ -2380,6 +2391,38 @@
                     ]
                 });
 
+                // Initialize Google Places Autocomplete
+                const searchInput = document.getElementById('addressSearch');
+                const autocomplete = new google.maps.places.Autocomplete(searchInput);
+                autocomplete.bindTo('bounds', dropMap);
+
+                autocomplete.addListener('place_changed', () => {
+                    const place = autocomplete.getPlace();
+                    if (!place.geometry || !place.geometry.location) return;
+
+                    // Move map to selected location
+                    dropMap.setCenter(place.geometry.location);
+                    dropMap.setZoom(15);
+
+                    // Place marker
+                    if (dropMarker) dropMarker.setMap(null);
+                    dropMarker = new google.maps.Marker({
+                        position: place.geometry.location,
+                        map: dropMap,
+                        title: 'Drop Location'
+                    });
+
+                    // Update selected location
+                    selectedDropLocation = {
+                        lat: place.geometry.location.lat(),
+                        lng: place.geometry.location.lng()
+                    };
+
+                    document.getElementById('dropLocationInfo').innerHTML = `
+                        <strong>Location:</strong> ${place.formatted_address || place.name}
+                    `;
+                });
+
                 // Add click listener to place marker
                 dropMap.addListener('click', (event) => {
                     placeDropMarker(event.latLng);
@@ -2471,6 +2514,39 @@
                     return;
                 }
 
+                // Handle media upload if file selected
+                const mediaInput = document.getElementById('dropMedia');
+                const mediaFile = mediaInput.files[0];
+                let mediaUrl = null;
+                let mediaType = null;
+
+                if (mediaFile) {
+                    const progressDiv = document.getElementById('mediaUploadProgress');
+                    progressDiv.style.display = 'block';
+                    progressDiv.textContent = 'Uploading media...';
+
+                    const fileExt = mediaFile.name.split('.').pop();
+                    const fileName = `admin-drops/${Date.now()}.${fileExt}`;
+                    mediaType = mediaFile.type.startsWith('video/') ? 'video' : 'image';
+
+                    const { data: uploadData, error: uploadError } = await supabaseClient.storage
+                        .from('blip-videos')
+                        .upload(fileName, mediaFile);
+
+                    if (uploadError) {
+                        progressDiv.textContent = 'Upload failed: ' + uploadError.message;
+                        return;
+                    }
+
+                    const { data: { publicUrl } } = supabaseClient.storage
+                        .from('blip-videos')
+                        .getPublicUrl(fileName);
+
+                    mediaUrl = publicUrl;
+                    progressDiv.textContent = 'Media uploaded successfully!';
+                    setTimeout(() => { progressDiv.style.display = 'none'; }, 2000);
+                }
+
                 // Prepare data
                 const dropData = {
                     title: title,
@@ -2485,7 +2561,9 @@
                     expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
                     created_by: currentAdminId,
                     is_active: true,
-                    views_count: 0
+                    views_count: 0,
+                    media_url: mediaUrl,
+                    media_type: mediaType
                 };
 
                 // Insert into database
@@ -2512,6 +2590,7 @@
                 document.getElementById('dropRadius').value = '100';
                 document.getElementById('dropViewLimit').value = '';
                 document.getElementById('dropExpiresAt').value = '';
+                document.getElementById('dropMedia').value = '';
 
                 // Clear marker
                 if (dropMarker) {
