@@ -301,13 +301,13 @@
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
                 // Check if user is admin
-                const { data: profile } = await supabase
-                    .from('profiles')
+                const { data: user } = await supabase
+                    .from('users')
                     .select('is_admin')
                     .eq('id', session.user.id)
                     .single();
 
-                if (profile?.is_admin) {
+                if (user?.is_admin) {
                     window.location.href = '/admin.html';
                 }
             }
@@ -331,15 +331,15 @@
                 if (error) throw error;
 
                 // Check if user is admin
-                const { data: profile, error: profileError } = await supabase
-                    .from('profiles')
+                const { data: user, error: userError } = await supabase
+                    .from('users')
                     .select('is_admin')
                     .eq('id', data.user.id)
                     .single();
 
-                if (profileError) throw new Error('Error fetching profile');
+                if (userError) throw new Error('Error fetching user');
 
-                if (!profile?.is_admin) {
+                if (!user?.is_admin) {
                     await supabase.auth.signOut();
                     throw new Error('Access denied. Admin privileges required.');
                 }
