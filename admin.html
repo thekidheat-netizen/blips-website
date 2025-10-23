@@ -760,6 +760,7 @@
         let dropMarker = null;
         let selectedDropLocation = null;
         let allAdminDrops = [];
+        let dropMapMarkers = []; // Store markers for existing drops on map
 
         async function login() {
             const email = document.getElementById('loginEmail').value;
@@ -2646,6 +2647,85 @@
             `;
 
             container.innerHTML = html;
+
+            // Also update markers on the map
+            updateDropMarkersOnMap();
+        }
+
+        function updateDropMarkersOnMap() {
+            if (!dropMap) return;
+
+            // Clear existing drop markers
+            dropMapMarkers.forEach(marker => marker.setMap(null));
+            dropMapMarkers = [];
+
+            // Add markers for all drops
+            allAdminDrops.forEach(drop => {
+                const isExpired = drop.expires_at && new Date(drop.expires_at) < new Date();
+                const isViewLimitReached = drop.view_limit && drop.views_count >= drop.view_limit;
+                const isActive = drop.is_active && !isExpired && !isViewLimitReached;
+
+                // Color based on drop type
+                const markerColor = drop.drop_type === 'reward' ? '#FFD700' :
+                                   drop.drop_type === 'special' ? '#FF1493' : '#00D4FF';
+
+                // Create marker with custom icon
+                const marker = new google.maps.Marker({
+                    position: { lat: drop.latitude, lng: drop.longitude },
+                    map: dropMap,
+                    title: drop.title,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 10,
+                        fillColor: markerColor,
+                        fillOpacity: isActive ? 0.9 : 0.4,
+                        strokeColor: '#ffffff',
+                        strokeWeight: 2,
+                    },
+                });
+
+                // Add click listener to show info
+                marker.addListener('click', () => {
+                    const infoContent = `
+                        <div style="padding: 10px; max-width: 250px;">
+                            <h3 style="margin: 0 0 10px 0; color: #333;">${drop.title}</h3>
+                            <p style="margin: 5px 0; color: #666;">${drop.description || 'No description'}</p>
+                            <p style="margin: 5px 0; font-size: 12px; color: #999;">
+                                Type: ${drop.drop_type} | Icon: ${drop.icon_type}<br>
+                                Reward: ${drop.reward_amount}<br>
+                                Views: ${drop.views_count || 0}${drop.view_limit ? ` / ${drop.view_limit}` : ''}<br>
+                                Status: ${isActive ? 'Active' : 'Inactive/Expired'}<br>
+                                Expires: ${drop.expires_at ? new Date(drop.expires_at).toLocaleString() : 'Never'}
+                            </p>
+                            <div style="margin-top: 10px;">
+                                <button onclick="toggleDropActive('${drop.id}', ${!drop.is_active}); google.maps.event.trigger(dropMap, 'click');"
+                                    style="padding: 6px 12px; margin-right: 5px; background: ${drop.is_active ? '#ff9800' : '#4CAF50'}; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                    ${drop.is_active ? 'Deactivate' : 'Activate'}
+                                </button>
+                                <button onclick="deleteAdminDrop('${drop.id}'); google.maps.event.trigger(dropMap, 'click');"
+                                    style="padding: 6px 12px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    const infoWindow = new google.maps.InfoWindow({
+                        content: infoContent
+                    });
+
+                    infoWindow.open(dropMap, marker);
+                });
+
+                dropMapMarkers.push(marker);
+            });
+
+            // Fit bounds to show all markers
+            if (dropMapMarkers.length > 0) {
+                const bounds = new google.maps.LatLngBounds();
+                dropMapMarkers.forEach(marker => bounds.extend(marker.getPosition()));
+                dropMap.fitBounds(bounds);
+            }
         }
 
         async function toggleDropActive(dropId, isActive) {
