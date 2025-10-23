@@ -2670,9 +2670,9 @@
                     <tr style="border-bottom: 1px solid #E0E0E0;">
                         <td style="padding: 12px;">
                             <strong>${drop.title}</strong>
-                            ${drop.description ? `<br><span style="font-size: 12px; color: #666;">${drop.description.substring(0, 50)}${drop.description.length > 50 ? '...' : ''}</span>` : ''}
+                            ${drop.description ? `<br><span style="font-size: 12px; color: #333;">${drop.description.substring(0, 50)}${drop.description.length > 50 ? '...' : ''}</span>` : ''}
                         </td>
-                        <td style="padding: 12px; font-size: 12px; color: #666;">
+                        <td style="padding: 12px; font-size: 12px; color: #333;">
                             ${drop.latitude.toFixed(4)}, ${drop.longitude.toFixed(4)}
                             <br>Radius: ${drop.radius}m
                         </td>
@@ -2696,7 +2696,7 @@
                                 ${statusText}
                             </span>
                         </td>
-                        <td style="padding: 12px; font-size: 12px; color: #666;">
+                        <td style="padding: 12px; font-size: 12px; color: #333;">
                             ${drop.expires_at ? new Date(drop.expires_at).toLocaleString() : 'Never'}
                         </td>
                         <td style="padding: 12px; text-align: center;">
