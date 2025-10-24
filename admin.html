@@ -2632,12 +2632,22 @@
                 }
 
                 const result = await response.json();
-                console.log('Drop created:', result);
+                console.log('📦 Drop created successfully:', result);
+                console.log('📬 Notifications sent:', result.notificationsSent);
+                console.log('📍 Drop ID:', result.drop?.id);
 
+                // Always show notification count (even if 0)
                 let successMessage = 'Drop created successfully!';
-                if (result.notificationsSent > 0) {
-                    successMessage += `\n${result.notificationsSent} notification(s) sent to nearby users.`;
+                const notifCount = result.notificationsSent || 0;
+
+                if (notifCount > 0) {
+                    successMessage += `\n\n✅ ${notifCount} notification(s) sent to nearby users.`;
+                } else if (notificationMessage) {
+                    successMessage += `\n\n⚠️ 0 notifications sent.\nPossible reasons:\n• No users with recent location data (within 4 hours)\n• No users within ${notificationRadius} mile radius\n• Users don't have push tokens`;
+                } else {
+                    successMessage += `\n\nℹ️ No notification message provided - no notifications sent.`;
                 }
+
                 alert(successMessage);
 
                 // Clear form
