@@ -1726,7 +1726,13 @@
                         location_lat,
                         location_lon,
                         created_at,
-                        replier:users!video_replies_replied_by_fkey(id, username)
+                        replier:users!video_replies_replied_by_fkey(id, username),
+                        blip:blips(
+                            id,
+                            user_id,
+                            title,
+                            blip_owner:users!blips_user_id_fkey(id, username)
+                        )
                     )
                 `)
                 .order('created_at', { ascending: false });
@@ -2405,9 +2411,9 @@
                 // Video reply report
                 const videoReply = report.video_reply;
                 const reporter = report.reporter;
-                const sender = videoReply?.sender;
-                const recipient = videoReply?.recipient;
-                const originalBlip = videoReply?.original_blip;
+                const sender = videoReply?.replier;
+                const recipient = videoReply?.blip?.blip_owner;
+                const originalBlip = videoReply?.blip;
 
                 html = `
                     <h2 style="margin-bottom: 20px;">Video Reply Report Details</h2>
@@ -2455,13 +2461,13 @@
                                 <div>
                                     <strong style="color: #333;">Sent By:</strong>
                                     <p style="margin-top: 5px;">
-                                        <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${videoReply.sender_id}')">@${sender?.username || 'Unknown'}</span>
+                                        <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${videoReply.replied_by}')">@${sender?.username || 'Unknown'}</span>
                                     </p>
                                 </div>
                                 <div>
                                     <strong style="color: #333;">Sent To:</strong>
                                     <p style="margin-top: 5px;">
-                                        <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${videoReply.recipient_id}')">@${recipient?.username || 'Unknown'}</span>
+                                        <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${originalBlip?.user_id}')">@${recipient?.username || 'Unknown'}</span>
                                     </p>
                                 </div>
                             </div>
@@ -2469,7 +2475,7 @@
                             <div style="margin-bottom: 15px;">
                                 <strong style="color: #333;">Reply to Blip by:</strong>
                                 <p style="margin-top: 5px;">
-                                    <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${originalBlip?.user_id}')">@${originalBlip?.users?.username || 'Unknown'}</span>
+                                    <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${originalBlip?.user_id}')">@${originalBlip?.blip_owner?.username || 'Unknown'}</span>
                                     ${originalBlip?.id ? `<span style="color: #999; margin-left: 10px;">(Blip ID: ${originalBlip.id})</span>` : ''}
                                 </p>
                             </div>
@@ -2483,8 +2489,8 @@
                                 <div>
                                     <strong style="color: #333;">Location:</strong>
                                     <p style="color: #666; margin-top: 5px;">
-                                        ${videoReply.latitude && videoReply.longitude
-                                            ? `📍 ${videoReply.latitude.toFixed(6)}, ${videoReply.longitude.toFixed(6)}<br><a href="https://www.google.com/maps?q=${videoReply.latitude},${videoReply.longitude}" target="_blank" style="color: #4A90E2;">View on Google Maps</a>`
+                                        ${videoReply.location_lat && videoReply.location_lon
+                                            ? `📍 ${videoReply.location_lat.toFixed(6)}, ${videoReply.location_lon.toFixed(6)}<br><a href="https://www.google.com/maps?q=${videoReply.location_lat},${videoReply.location_lon}" target="_blank" style="color: #4A90E2;">View on Google Maps</a>`
                                             : 'No location data'
                                         }
                                     </p>
@@ -2500,7 +2506,7 @@
                     <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
                         <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${report.reported_by}')">View Reporter Profile</button>
                         ${videoReply ? `
-                            <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${videoReply.sender_id}')">View Sender Profile</button>
+                            <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${videoReply.replied_by}')">View Sender Profile</button>
                             <button class="btn btn-danger" onclick="deleteVideoReplyFromReport('${videoReply.id}', '@${sender?.username || 'Unknown'}', '${report.id}')">Delete Video Reply</button>
                         ` : ''}
                         <select
