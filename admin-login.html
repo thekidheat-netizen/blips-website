@@ -315,28 +315,34 @@
 
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            console.log('Form submitted');
 
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
 
+            console.log('Email:', email);
             setLoading(true);
 
             try {
                 // Sign in with Supabase
+                console.log('Attempting sign in...');
                 const { data, error } = await supabase.auth.signInWithPassword({
                     email: email,
                     password: password,
                 });
 
+                console.log('Sign in response:', { data, error });
                 if (error) throw error;
 
                 // Check if user is admin
+                console.log('Checking admin status...');
                 const { data: user, error: userError } = await supabase
                     .from('users')
                     .select('is_admin')
                     .eq('id', data.user.id)
                     .single();
 
+                console.log('User data:', { user, userError });
                 if (userError) throw new Error('Error fetching user');
 
                 if (!user?.is_admin) {
@@ -345,6 +351,7 @@
                 }
 
                 // Successful login - redirect to admin dashboard
+                console.log('Login successful, redirecting...');
                 window.location.href = '/admin.html';
             } catch (error) {
                 console.error('Login error:', error);

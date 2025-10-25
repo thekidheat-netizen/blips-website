@@ -817,22 +817,53 @@
         let dropMapMarkers = []; // Store markers for existing drops on map
 
         async function login() {
+            console.log('Login function called');
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
+            console.log('Email:', email);
 
-            const { data, error } = await supabaseClient.auth.signInWithPassword({
-                email,
-                password
-            });
+            try {
+                console.log('Attempting sign in...');
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
+                    email,
+                    password
+                });
 
-            if (error) {
-                alert('Login failed: ' + error.message);
-                return;
+                console.log('Sign in response:', { data, error });
+                if (error) {
+                    alert('Login failed: ' + error.message);
+                    return;
+                }
+
+                // Check if user is admin
+                console.log('Checking admin status...');
+                const { data: user, error: userError } = await supabaseClient
+                    .from('users')
+                    .select('is_admin')
+                    .eq('id', data.user.id)
+                    .single();
+
+                console.log('User data:', { user, userError });
+                if (userError) {
+                    alert('Error checking admin status: ' + userError.message);
+                    await supabaseClient.auth.signOut();
+                    return;
+                }
+
+                if (!user?.is_admin) {
+                    alert('Access denied. Admin privileges required.');
+                    await supabaseClient.auth.signOut();
+                    return;
+                }
+
+                console.log('Login successful, loading dashboard...');
+                currentAdminId = data.user.id;
+                document.getElementById('app').className = 'logged-in';
+                loadDashboard();
+            } catch (err) {
+                console.error('Login error:', err);
+                alert('Login failed: ' + err.message);
             }
-
-            currentAdminId = data.user.id;
-            document.getElementById('app').className = 'logged-in';
-            loadDashboard();
         }
 
         async function logout() {
