@@ -1726,8 +1726,7 @@
                         location_lat,
                         location_lon,
                         created_at,
-                        replier:users!video_replies_replied_by_fkey(id, username),
-                        original_blip:blips!video_replies_blip_id_fkey(id, user_id, users(username))
+                        replier:users!video_replies_replied_by_fkey(id, username)
                     ),
                     reporter:users!video_reply_reports_reported_by_fkey(username, id)
                 `)
@@ -1784,8 +1783,7 @@
                                report.blip_owner?.username?.toLowerCase().includes(searchQuery);
                     } else if (report.reportType === 'video_reply') {
                         return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
-                               report.video_reply?.replier?.username?.toLowerCase().includes(searchQuery) ||
-                               report.video_reply?.original_blip?.users?.username?.toLowerCase().includes(searchQuery);
+                               report.video_reply?.replier?.username?.toLowerCase().includes(searchQuery);
                     } else {
                         return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
                                report.reported_user?.username?.toLowerCase().includes(searchQuery);
