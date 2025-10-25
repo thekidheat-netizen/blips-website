@@ -1779,8 +1779,8 @@
                                report.blip_owner?.username?.toLowerCase().includes(searchQuery);
                     } else if (report.reportType === 'video_reply') {
                         return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
-                               report.video_reply?.sender?.username?.toLowerCase().includes(searchQuery) ||
-                               report.video_reply?.recipient?.username?.toLowerCase().includes(searchQuery);
+                               report.video_reply?.replier?.username?.toLowerCase().includes(searchQuery) ||
+                               report.video_reply?.original_blip?.users?.username?.toLowerCase().includes(searchQuery);
                     } else {
                         return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
                                report.reported_user?.username?.toLowerCase().includes(searchQuery);
@@ -1825,8 +1825,8 @@
                                 badgeColor = '#FFF4E6';
                                 badgeTextColor = '#FF8C00';
                                 reportedByUser = report.reporter?.username;
-                                reportedUser = report.video_reply?.sender?.username;
-                                reportedUserId = report.video_reply?.sender_id;
+                                reportedUser = report.video_reply?.replier?.username;
+                                reportedUserId = report.video_reply?.replied_by;
                             } else {
                                 badgeColor = '#E8F0FF';
                                 badgeTextColor = '#4A90E2';
