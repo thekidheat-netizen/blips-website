@@ -437,7 +437,7 @@
                 <label>Password</label>
                 <input type="password" id="loginPassword" placeholder="••••••••">
             </div>
-            <button class="btn btn-primary" onclick="login()" style="width: 100%; margin-top: 10px;">Login</button>
+            <button id="loginButton" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Login</button>
         </div>
 
         <!-- Dashboard -->
@@ -867,6 +867,15 @@
                 alert('Login failed: ' + err.message);
             }
         }
+
+        // Attach login button event listener
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginButton = document.getElementById('loginButton');
+            if (loginButton) {
+                loginButton.addEventListener('click', login);
+                console.log('Login button event listener attached');
+            }
+        });
 
         async function logout() {
             await supabaseClient.auth.signOut();
