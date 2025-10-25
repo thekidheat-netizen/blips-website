@@ -1713,7 +1713,7 @@
                 .order('created_at', { ascending: false });
 
             // Load video reply reports
-            const { data: videoReplyReports } = await supabaseClient
+            const { data: videoReplyReports, error: videoReplyError } = await supabaseClient
                 .from('video_reply_reports')
                 .select(`
                     *,
@@ -1732,6 +1732,11 @@
                     reporter:users!video_reply_reports_reported_by_fkey(username, id)
                 `)
                 .order('created_at', { ascending: false });
+
+            if (videoReplyError) {
+                console.error('Error loading video reply reports:', videoReplyError);
+            }
+            console.log('Video reply reports loaded:', videoReplyReports);
 
             allReports = [
                 ...(blipReports || []).map(r => ({ ...r, reportType: 'blip' })),
