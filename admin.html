@@ -996,6 +996,17 @@
                 .eq('user_id', userId)
                 .order('created_at', { ascending: false });
 
+            // Get video replies sent by this user
+            const { data: videoReplies } = await supabaseClient
+                .from('video_replies')
+                .select(`
+                    *,
+                    recipient:users!video_replies_recipient_id_fkey(id, username, avatar_url),
+                    original_blip:blips!video_replies_blip_id_fkey(id, thumbnail_url, user_id, users(username))
+                `)
+                .eq('sender_id', userId)
+                .order('created_at', { ascending: false });
+
             // Get admin action history
             const { data: adminLogs } = await supabaseClient
                 .from('admin_logs')
@@ -1050,6 +1061,7 @@
                         }
                         <button class="btn btn-info" onclick="promptUsernameChange('${user.id}', '${user.username}')">Change Username</button>
                         <button class="btn btn-info" onclick="promptDisplayNameChange('${user.id}', '${user.display_name || ''}')">Change Display Name</button>
+                        <button class="btn btn-info" onclick="promptEmailChange('${user.id}', '${user.email || ''}', '${user.username}')">Change Email</button>
                         <button class="btn btn-info" onclick="resetUserPassword('${user.id}', '${user.username}')">Reset Password</button>
                         <button class="btn btn-warning" onclick="deleteAllUserBlips('${user.id}', '${user.username}')">Delete All Blips</button>
                         <button class="btn btn-danger" onclick="deleteUser('${user.id}', '${user.username}')">Delete Account</button>
@@ -1059,20 +1071,103 @@
                 <div class="action-section">
                     <h3>User's Blips (${userBlips?.length || 0})</h3>
                     ${userBlips && userBlips.length > 0 ? `
-                        <div class="blip-grid">
+                        <div style="display: grid; gap: 15px;">
                             ${userBlips.map(blip => `
-                                <div class="blip-item" onclick="playBlipVideo('${blip.video_url}', '@${user.username}')">
-                                    ${blip.thumbnail_url
-                                        ? `<img src="${blip.thumbnail_url}">`
-                                        : `<div style="width: 100%; height: 150px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 40px;">📹</div>`
-                                    }
-                                    <div class="blip-item-overlay">
-                                        <div>👁️ ${blip.views_count || 0}</div>
+                                <div style="background: #f9f9f9; padding: 15px; border-radius: 8px; border-left: 4px solid #FF6B9D;">
+                                    <div style="display: flex; gap: 15px; align-items: start;">
+                                        <div class="blip-item" onclick="playBlipVideo('${blip.video_url}', '@${user.username}')" style="flex-shrink: 0; width: 150px;">
+                                            ${blip.thumbnail_url
+                                                ? `<img src="${blip.thumbnail_url}">`
+                                                : `<div style="width: 100%; height: 150px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 40px;">📹</div>`
+                                            }
+                                            <div class="blip-item-overlay">
+                                                <div>👁️ ${blip.views_count || 0}</div>
+                                            </div>
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <div style="margin-bottom: 10px;">
+                                                <strong style="color: #333; font-size: 16px;">Blip Details</strong>
+                                            </div>
+                                            <div style="display: grid; gap: 8px; font-size: 14px; color: #666;">
+                                                <div>
+                                                    <strong>📅 Created:</strong> ${new Date(blip.created_at).toLocaleString()}
+                                                </div>
+                                                ${blip.latitude && blip.longitude ? `
+                                                    <div>
+                                                        <strong>📍 Location:</strong> ${blip.latitude.toFixed(6)}, ${blip.longitude.toFixed(6)}
+                                                        <a href="https://www.google.com/maps?q=${blip.latitude},${blip.longitude}" target="_blank" style="color: #4A90E2; margin-left: 5px;">View on Map</a>
+                                                    </div>
+                                                ` : '<div><strong>📍 Location:</strong> Not available</div>'}
+                                                <div>
+                                                    <strong>👁️ Views:</strong> ${blip.views_count || 0}
+                                                </div>
+                                                <div>
+                                                    <strong>🔗 ID:</strong> ${blip.id}
+                                                </div>
+                                                ${blip.caption ? `
+                                                    <div>
+                                                        <strong>💬 Caption:</strong> ${blip.caption}
+                                                    </div>
+                                                ` : ''}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             `).join('')}
                         </div>
                     ` : '<p style="color: #999;">No blips yet</p>'}
+                </div>
+
+                <div class="action-section">
+                    <h3>Video Replies Sent (${videoReplies?.length || 0})</h3>
+                    ${videoReplies && videoReplies.length > 0 ? `
+                        <div style="display: grid; gap: 15px;">
+                            ${videoReplies.map(reply => `
+                                <div style="background: #f0f8ff; padding: 15px; border-radius: 8px; border-left: 4px solid #4A90E2;">
+                                    <div style="display: flex; gap: 15px; align-items: start;">
+                                        <div class="blip-item" onclick="playBlipVideo('${reply.video_url}', '@${user.username}')" style="flex-shrink: 0; width: 150px;">
+                                            ${reply.thumbnail_url
+                                                ? `<img src="${reply.thumbnail_url}">`
+                                                : `<div style="width: 100%; height: 150px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 40px;">📹</div>`
+                                            }
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <div style="margin-bottom: 10px;">
+                                                <strong style="color: #333; font-size: 16px;">Video Reply Details</strong>
+                                            </div>
+                                            <div style="display: grid; gap: 8px; font-size: 14px; color: #666;">
+                                                <div>
+                                                    <strong>📅 Sent:</strong> ${new Date(reply.created_at).toLocaleString()}
+                                                </div>
+                                                <div>
+                                                    <strong>👤 Recipient:</strong>
+                                                    <span class="clickable-username" onclick="event.stopPropagation(); openUserDetail('${reply.recipient?.id}')">@${reply.recipient?.username || 'Unknown'}</span>
+                                                </div>
+                                                <div>
+                                                    <strong>💬 Reply to Blip by:</strong>
+                                                    <span class="clickable-username" onclick="event.stopPropagation(); openUserDetail('${reply.original_blip?.user_id}')">@${reply.original_blip?.users?.username || 'Unknown'}</span>
+                                                </div>
+                                                ${reply.latitude && reply.longitude ? `
+                                                    <div>
+                                                        <strong>📍 Location:</strong> ${reply.latitude.toFixed(6)}, ${reply.longitude.toFixed(6)}
+                                                        <a href="https://www.google.com/maps?q=${reply.latitude},${reply.longitude}" target="_blank" style="color: #4A90E2; margin-left: 5px;">View on Map</a>
+                                                    </div>
+                                                ` : '<div><strong>📍 Location:</strong> Not available</div>'}
+                                                <div>
+                                                    <strong>🔗 Reply ID:</strong> ${reply.id}
+                                                </div>
+                                                ${reply.original_blip?.id ? `
+                                                    <div>
+                                                        <strong>🔗 Original Blip ID:</strong> ${reply.original_blip.id}
+                                                    </div>
+                                                ` : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : '<p style="color: #999;">No video replies sent</p>'}
                 </div>
 
                 <div class="action-section">
@@ -1105,9 +1200,11 @@
                 'unban': '✅ User Unbanned',
                 'delete_user': '🗑️ User Deleted',
                 'delete_blip': '🗑️ Blip Deleted',
+                'delete_video_reply': '🗑️ Video Reply Deleted',
                 'delete_all_blips': '🗑️ All Blips Deleted',
                 'username_change': '✏️ Username Changed',
                 'display_name_change': '✏️ Display Name Changed',
+                'email_change': '✉️ Email Changed',
                 'password_reset': '🔑 Password Reset',
                 'edit_user': '✏️ User Edited',
                 'verification_approved': '✓ Verification Approved',
@@ -1259,6 +1356,60 @@
             alert(`Display name changed to "${newDisplayName}"`);
             loadUsers();
             openUserDetail(userId);
+        }
+
+        async function promptEmailChange(userId, currentEmail, username) {
+            const newEmail = prompt(`Change email for @${username} from "${currentEmail}" to:`, currentEmail);
+            if (!newEmail || newEmail === currentEmail) return;
+
+            // Validate email format
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(newEmail)) {
+                alert('Invalid email format. Please enter a valid email address.');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to change the email from "${currentEmail}" to "${newEmail}"?\n\nThis will update both auth.users and public.users tables.`)) {
+                return;
+            }
+
+            try {
+                // Update public.users table
+                const { error: publicError } = await supabaseClient
+                    .from('users')
+                    .update({ email: newEmail })
+                    .eq('id', userId);
+
+                if (publicError) {
+                    alert('Error updating public.users: ' + publicError.message);
+                    return;
+                }
+
+                // Update auth.users table using the admin updateUserById method
+                const { error: authError } = await supabaseClient.auth.admin.updateUserById(
+                    userId,
+                    { email: newEmail }
+                );
+
+                if (authError) {
+                    // Rollback public.users change
+                    await supabaseClient
+                        .from('users')
+                        .update({ email: currentEmail })
+                        .eq('id', userId);
+
+                    alert('Error updating auth.users (changes rolled back): ' + authError.message);
+                    return;
+                }
+
+                await logAdminAction('email_change', userId, { from: currentEmail, to: newEmail }, `Changed email from "${currentEmail}" to "${newEmail}"`);
+                alert(`Email successfully changed to "${newEmail}"\n\nBoth auth.users and public.users have been updated.`);
+                loadUsers();
+                openUserDetail(userId);
+            } catch (error) {
+                alert('Error changing email: ' + error.message);
+                console.error('Email change error:', error);
+            }
         }
 
         async function resetUserPassword(userId, username) {
@@ -1428,9 +1579,33 @@
                 .neq('report_type', 'appeal') // Exclude appeals from reports
                 .order('created_at', { ascending: false });
 
+            // Load video reply reports
+            const { data: videoReplyReports } = await supabaseClient
+                .from('video_reply_reports')
+                .select(`
+                    *,
+                    video_reply:video_replies(
+                        id,
+                        video_url,
+                        thumbnail_url,
+                        sender_id,
+                        recipient_id,
+                        blip_id,
+                        latitude,
+                        longitude,
+                        created_at,
+                        sender:users!video_replies_sender_id_fkey(id, username),
+                        recipient:users!video_replies_recipient_id_fkey(id, username),
+                        original_blip:blips!video_replies_blip_id_fkey(id, user_id, users(username))
+                    ),
+                    reporter:users!video_reply_reports_reported_by_fkey(username, id)
+                `)
+                .order('created_at', { ascending: false });
+
             allReports = [
                 ...(blipReports || []).map(r => ({ ...r, reportType: 'blip' })),
-                ...(profileReports || []).map(r => ({ ...r, reportType: 'profile' }))
+                ...(profileReports || []).map(r => ({ ...r, reportType: 'profile' })),
+                ...(videoReplyReports || []).map(r => ({ ...r, reportType: 'video_reply' }))
             ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
             filterReports();
@@ -1471,6 +1646,10 @@
                     if (report.reportType === 'blip') {
                         return report.users?.username?.toLowerCase().includes(searchQuery) ||
                                report.blip_owner?.username?.toLowerCase().includes(searchQuery);
+                    } else if (report.reportType === 'video_reply') {
+                        return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
+                               report.video_reply?.sender?.username?.toLowerCase().includes(searchQuery) ||
+                               report.video_reply?.recipient?.username?.toLowerCase().includes(searchQuery);
                     } else {
                         return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
                                report.reported_user?.username?.toLowerCase().includes(searchQuery);
@@ -1502,25 +1681,50 @@
                         </tr>
                     </thead>
                     <tbody>
-                        ${reports.map(report => `
+                        ${reports.map(report => {
+                            let badgeColor, badgeTextColor, reportedByUser, reportedUser, reportedUserId;
+
+                            if (report.reportType === 'blip') {
+                                badgeColor = '#FFE8F0';
+                                badgeTextColor = '#FF6B9D';
+                                reportedByUser = report.users?.username;
+                                reportedUser = report.blip_owner?.username;
+                                reportedUserId = report.blip_owner_id;
+                            } else if (report.reportType === 'video_reply') {
+                                badgeColor = '#FFF4E6';
+                                badgeTextColor = '#FF8C00';
+                                reportedByUser = report.reporter?.username;
+                                reportedUser = report.video_reply?.sender?.username;
+                                reportedUserId = report.video_reply?.sender_id;
+                            } else {
+                                badgeColor = '#E8F0FF';
+                                badgeTextColor = '#4A90E2';
+                                reportedByUser = report.reporter?.username;
+                                reportedUser = report.reported_user?.username;
+                                reportedUserId = report.reported_user_id;
+                            }
+
+                            return `
                             <tr>
-                                <td><span class="badge" style="background: ${report.reportType === 'blip' ? '#FFE8F0' : '#E8F0FF'}; color: ${report.reportType === 'blip' ? '#FF6B9D' : '#4A90E2'};">${report.reportType.toUpperCase()}</span></td>
+                                <td><span class="badge" style="background: ${badgeColor}; color: ${badgeTextColor};">${report.reportType.toUpperCase().replace('_', ' ')}</span></td>
                                 <td>
                                     ${report.reportType === 'blip' && report.blips?.thumbnail_url
                                         ? `<img src="${report.blips.thumbnail_url}" style="width: 60px; height: 60px; border-radius: 8px; cursor: pointer;" onclick="playBlipVideo('${report.blips.video_url}', 'Reported')">`
-                                        : report.reportType === 'profile' && report.reported_user?.avatar_url
-                                            ? `<img src="${report.reported_user.avatar_url}" class="avatar">`
-                                            : '📹'
+                                        : report.reportType === 'video_reply' && report.video_reply?.thumbnail_url
+                                            ? `<img src="${report.video_reply.thumbnail_url}" style="width: 60px; height: 60px; border-radius: 8px; cursor: pointer;" onclick="playBlipVideo('${report.video_reply.video_url}', 'Video Reply')">`
+                                            : report.reportType === 'profile' && report.reported_user?.avatar_url
+                                                ? `<img src="${report.reported_user.avatar_url}" class="avatar">`
+                                                : '📹'
                                     }
                                 </td>
                                 <td>
-                                    <span class="clickable-username" onclick="openUserDetail('${report.reportType === 'blip' ? report.reported_by : report.reported_by}')">
-                                        @${report.reportType === 'blip' ? report.users?.username : report.reporter?.username}
+                                    <span class="clickable-username" onclick="openUserDetail('${report.reported_by}')">
+                                        @${reportedByUser || 'Unknown'}
                                     </span>
                                 </td>
                                 <td>
-                                    <span class="clickable-username" onclick="openUserDetail('${report.reportType === 'blip' ? report.blip_owner_id : report.reported_user_id}')">
-                                        @${report.reportType === 'blip' ? report.blip_owner?.username : report.reported_user?.username}
+                                    <span class="clickable-username" onclick="openUserDetail('${reportedUserId}')">
+                                        @${reportedUser || 'Unknown'}
                                     </span>
                                 </td>
                                 <td>${report.reason}</td>
@@ -1540,7 +1744,7 @@
                                     </select>
                                 </td>
                             </tr>
-                        `).join('')}
+                        `}).join('')}
                     </tbody>
                 </table>
             `;
@@ -1549,7 +1753,14 @@
         }
 
         async function updateReportStatus(reportId, status, reportType) {
-            const tableName = reportType === 'blip' ? 'blip_reports' : 'profile_reports';
+            let tableName;
+            if (reportType === 'blip') {
+                tableName = 'blip_reports';
+            } else if (reportType === 'video_reply') {
+                tableName = 'video_reply_reports';
+            } else {
+                tableName = 'profile_reports';
+            }
 
             const { error } = await supabaseClient
                 .from(tableName)
@@ -2040,6 +2251,119 @@
                         </select>
                     </div>
                 `;
+            } else if (reportType === 'video_reply') {
+                // Video reply report
+                const videoReply = report.video_reply;
+                const reporter = report.reporter;
+                const sender = videoReply?.sender;
+                const recipient = videoReply?.recipient;
+                const originalBlip = videoReply?.original_blip;
+
+                html = `
+                    <h2 style="margin-bottom: 20px;">Video Reply Report Details</h2>
+
+                    <div style="background: #FFF4E6; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #FF8C00;">
+                        <h3 style="color: #FF8C00; margin-bottom: 15px;">Report Information</h3>
+
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <strong style="color: #333;">Category:</strong>
+                                <p style="color: #666; margin-top: 5px;">${report.reason}</p>
+                            </div>
+                            <div>
+                                <strong style="color: #333;">Status:</strong>
+                                <p style="margin-top: 5px;">
+                                    <span class="badge" style="background: ${report.status === 'pending' ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #333;">Additional Details:</strong>
+                            <p style="color: #666; margin-top: 5px; white-space: pre-wrap; background: white; padding: 10px; border-radius: 6px;">${report.details || 'No additional details provided'}</p>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                            <div>
+                                <strong style="color: #333;">Reported By:</strong>
+                                <p style="margin-top: 5px;">
+                                    <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${report.reported_by}')">@${reporter?.username || 'Unknown'}</span>
+                                </p>
+                            </div>
+                            <div>
+                                <strong style="color: #333;">Reported On:</strong>
+                                <p style="color: #666; margin-top: 5px;">${new Date(report.created_at).toLocaleString()}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${videoReply ? `
+                        <div style="background: #f9f9f9; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                            <h3 style="color: #333; margin-bottom: 15px;">Reported Video Reply</h3>
+
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px;">
+                                <div>
+                                    <strong style="color: #333;">Sent By:</strong>
+                                    <p style="margin-top: 5px;">
+                                        <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${videoReply.sender_id}')">@${sender?.username || 'Unknown'}</span>
+                                    </p>
+                                </div>
+                                <div>
+                                    <strong style="color: #333;">Sent To:</strong>
+                                    <p style="margin-top: 5px;">
+                                        <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${videoReply.recipient_id}')">@${recipient?.username || 'Unknown'}</span>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 15px;">
+                                <strong style="color: #333;">Reply to Blip by:</strong>
+                                <p style="margin-top: 5px;">
+                                    <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${originalBlip?.user_id}')">@${originalBlip?.users?.username || 'Unknown'}</span>
+                                    ${originalBlip?.id ? `<span style="color: #999; margin-left: 10px;">(Blip ID: ${originalBlip.id})</span>` : ''}
+                                </p>
+                            </div>
+
+                            <video controls style="width: 100%; border-radius: 8px; margin-bottom: 20px; max-height: 400px; background: #000;">
+                                <source src="${videoReply.video_url}" type="video/mp4">
+                                Your browser does not support the video tag.
+                            </video>
+
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                                <div>
+                                    <strong style="color: #333;">Location:</strong>
+                                    <p style="color: #666; margin-top: 5px;">
+                                        ${videoReply.latitude && videoReply.longitude
+                                            ? `📍 ${videoReply.latitude.toFixed(6)}, ${videoReply.longitude.toFixed(6)}<br><a href="https://www.google.com/maps?q=${videoReply.latitude},${videoReply.longitude}" target="_blank" style="color: #4A90E2;">View on Google Maps</a>`
+                                            : 'No location data'
+                                        }
+                                    </p>
+                                </div>
+                                <div>
+                                    <strong style="color: #333;">Sent:</strong>
+                                    <p style="color: #666; margin-top: 5px;">${new Date(videoReply.created_at).toLocaleString()}</p>
+                                </div>
+                            </div>
+                        </div>
+                    ` : '<p style="color: #999;">Video reply has been deleted</p>'}
+
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+                        <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${report.reported_by}')">View Reporter Profile</button>
+                        ${videoReply ? `
+                            <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${videoReply.sender_id}')">View Sender Profile</button>
+                            <button class="btn btn-danger" onclick="deleteVideoReplyFromReport('${videoReply.id}', '@${sender?.username || 'Unknown'}', '${report.id}')">Delete Video Reply</button>
+                        ` : ''}
+                        <select
+                            onchange="updateReportStatusFromDetail('${report.id}', this.value, '${reportType}')"
+                            style="padding: 8px 12px; border-radius: 6px; border: 2px solid #ddd; font-size: 14px; cursor: pointer; background: white;"
+                        >
+                            <option value="${report.status}" selected>${report.status}</option>
+                            ${report.status !== 'pending' ? '<option value="pending">pending</option>' : ''}
+                            ${report.status !== 'reviewed' ? '<option value="reviewed">reviewed</option>' : ''}
+                            ${report.status !== 'dismissed' ? '<option value="dismissed">dismissed</option>' : ''}
+                        </select>
+                    </div>
+                `;
             } else {
                 // Profile report
                 const reportedUser = report.reported_user;
@@ -2136,6 +2460,26 @@
 
             await logAdminAction('delete_blip', null, { blip_id: blipId, report_id: reportId }, `Deleted reported blip by ${username}`);
             alert('Blip deleted successfully');
+            closeReportDetail();
+            loadReports();
+            loadStats();
+        }
+
+        async function deleteVideoReplyFromReport(videoReplyId, username, reportId) {
+            if (!confirm(`Delete this video reply by ${username}? This CANNOT be undone!`)) return;
+
+            const { error } = await supabaseClient
+                .from('video_replies')
+                .delete()
+                .eq('id', videoReplyId);
+
+            if (error) {
+                alert('Error: ' + error.message);
+                return;
+            }
+
+            await logAdminAction('delete_video_reply', null, { video_reply_id: videoReplyId, report_id: reportId }, `Deleted reported video reply by ${username}`);
+            alert('Video reply deleted successfully');
             closeReportDetail();
             loadReports();
             loadStats();
