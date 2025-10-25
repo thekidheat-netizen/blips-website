@@ -1072,12 +1072,7 @@
                 .order('created_at', { ascending: false});
 
             // Get video replies received by this user (replies to their blips)
-            // First get the user's blip IDs
-            const { data: userBlips } = await supabaseClient
-                .from('blips')
-                .select('id')
-                .eq('user_id', userId);
-
+            // Use the user's blip IDs from the already-fetched userBlips
             const userBlipIds = userBlips?.map(b => b.id) || [];
 
             // Then get video replies to those blips
