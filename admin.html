@@ -1001,11 +1001,22 @@
                 .from('video_replies')
                 .select(`
                     *,
-                    recipient:users!video_replies_recipient_id_fkey(id, username, avatar_url),
+                    replier:users!video_replies_replied_by_fkey(id, username, avatar_url),
                     original_blip:blips!video_replies_blip_id_fkey(id, thumbnail_url, user_id, users(username))
                 `)
-                .eq('sender_id', userId)
-                .order('created_at', { ascending: false });
+                .eq('replied_by', userId)
+                .order('created_at', { ascending: false});
+
+            // Get video replies received by this user (replies to their blips)
+            const { data: videoRepliesReceived } = await supabaseClient
+                .from('video_replies')
+                .select(`
+                    *,
+                    replier:users!video_replies_replied_by_fkey(id, username, avatar_url),
+                    original_blip:blips!video_replies_blip_id_fkey(id, thumbnail_url, user_id, users(username))
+                `)
+                .eq('original_blip.user_id', userId)
+                .order('created_at', { ascending: false});
 
             // Get admin action history
             const { data: adminLogs } = await supabaseClient
@@ -1141,16 +1152,16 @@
                                                 </div>
                                                 <div>
                                                     <strong>👤 Recipient:</strong>
-                                                    <span class="clickable-username" onclick="event.stopPropagation(); openUserDetail('${reply.recipient?.id}')">@${reply.recipient?.username || 'Unknown'}</span>
+                                                    <span class="clickable-username" onclick="event.stopPropagation(); openUserDetail('${reply.replier?.id}')">@${reply.replier?.username || 'Unknown'}</span>
                                                 </div>
                                                 <div>
                                                     <strong>💬 Reply to Blip by:</strong>
                                                     <span class="clickable-username" onclick="event.stopPropagation(); openUserDetail('${reply.original_blip?.user_id}')">@${reply.original_blip?.users?.username || 'Unknown'}</span>
                                                 </div>
-                                                ${reply.latitude && reply.longitude ? `
+                                                ${reply.location_lat && reply.location_lon ? `
                                                     <div>
-                                                        <strong>📍 Location:</strong> ${reply.latitude.toFixed(6)}, ${reply.longitude.toFixed(6)}
-                                                        <a href="https://www.google.com/maps?q=${reply.latitude},${reply.longitude}" target="_blank" style="color: #4A90E2; margin-left: 5px;">View on Map</a>
+                                                        <strong>📍 Location:</strong> ${reply.location_lat.toFixed(6)}, ${reply.location_lon.toFixed(6)}
+                                                        <a href="https://www.google.com/maps?q=${reply.location_lat},${reply.location_lon}" target="_blank" style="color: #4A90E2; margin-left: 5px;">View on Map</a>
                                                     </div>
                                                 ` : '<div><strong>📍 Location:</strong> Not available</div>'}
                                                 <div>
@@ -1168,6 +1179,58 @@
                             `).join('')}
                         </div>
                     ` : '<p style="color: #999;">No video replies sent</p>'}
+                </div>
+
+                <div class="action-section">
+                    <h3>Video Replies Received (${videoRepliesReceived?.length || 0})</h3>
+                    ${videoRepliesReceived && videoRepliesReceived.length > 0 ? `
+                        <div style="display: grid; gap: 15px;">
+                            ${videoRepliesReceived.map(reply => `
+                                <div style="background: #f0fff0; padding: 15px; border-radius: 8px; border-left: 4px solid #34C759;">
+                                    <div style="display: flex; gap: 15px; align-items: start;">
+                                        <div class="blip-item" onclick="playBlipVideo('${reply.video_url}', '@${reply.replier?.username || 'Unknown'}')" style="flex-shrink: 0; width: 150px;">
+                                            ${reply.thumbnail_url
+                                                ? `<img src="${reply.thumbnail_url}">`
+                                                : `<div style="width: 100%; height: 150px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 40px;">📹</div>`
+                                            }
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <div style="margin-bottom: 10px;">
+                                                <strong style="color: #333; font-size: 16px;">Video Reply Received</strong>
+                                            </div>
+                                            <div style="display: grid; gap: 8px; font-size: 14px; color: #666;">
+                                                <div>
+                                                    <strong>📅 Received:</strong> ${new Date(reply.created_at).toLocaleString()}
+                                                </div>
+                                                <div>
+                                                    <strong>👤 From:</strong>
+                                                    <span class="clickable-username" onclick="event.stopPropagation(); openUserDetail('${reply.replier?.id}')">@${reply.replier?.username || 'Unknown'}</span>
+                                                </div>
+                                                <div>
+                                                    <strong>💬 Reply to Blip by:</strong>
+                                                    <span class="clickable-username" onclick="event.stopPropagation(); openUserDetail('${reply.original_blip?.user_id}')">@${reply.original_blip?.users?.username || 'Unknown'}</span>
+                                                </div>
+                                                ${reply.location_lat && reply.location_lon ? `
+                                                    <div>
+                                                        <strong>📍 Location:</strong> ${reply.location_lat.toFixed(6)}, ${reply.location_lon.toFixed(6)}
+                                                        <a href="https://www.google.com/maps?q=${reply.location_lat},${reply.location_lon}" target="_blank" style="color: #34C759; margin-left: 5px;">View on Map</a>
+                                                    </div>
+                                                ` : '<div><strong>📍 Location:</strong> Not available</div>'}
+                                                <div>
+                                                    <strong>🔗 Reply ID:</strong> ${reply.id}
+                                                </div>
+                                                ${reply.original_blip?.id ? `
+                                                    <div>
+                                                        <strong>🔗 Original Blip ID:</strong> ${reply.original_blip.id}
+                                                    </div>
+                                                ` : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : '<p style="color: #999;">No video replies received</p>'}
                 </div>
 
                 <div class="action-section">
