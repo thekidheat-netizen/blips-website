@@ -1727,10 +1727,26 @@
                         location_lon,
                         created_at,
                         replier:users!video_replies_replied_by_fkey(id, username)
-                    ),
-                    reporter:users!video_reply_reports_reported_by_fkey(username, id)
+                    )
                 `)
                 .order('created_at', { ascending: false });
+
+            // Fetch reporter usernames separately (no foreign key exists)
+            if (videoReplyReports && videoReplyReports.length > 0) {
+                const reporterIds = [...new Set(videoReplyReports.map(r => r.reported_by))];
+                const { data: reporters } = await supabaseClient
+                    .from('users')
+                    .select('id, username')
+                    .in('id', reporterIds);
+
+                // Map reporter data to reports
+                if (reporters) {
+                    const reporterMap = Object.fromEntries(reporters.map(u => [u.id, u]));
+                    videoReplyReports.forEach(report => {
+                        report.reporter = reporterMap[report.reported_by];
+                    });
+                }
+            }
 
             if (videoReplyError) {
                 console.error('Error loading video reply reports:', videoReplyError);
