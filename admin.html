@@ -1008,15 +1008,26 @@
                 .order('created_at', { ascending: false});
 
             // Get video replies received by this user (replies to their blips)
-            const { data: videoRepliesReceived } = await supabaseClient
-                .from('video_replies')
-                .select(`
-                    *,
-                    replier:users!video_replies_replied_by_fkey(id, username, avatar_url),
-                    original_blip:blips!video_replies_blip_id_fkey(id, thumbnail_url, user_id, users(username))
-                `)
-                .eq('original_blip.user_id', userId)
-                .order('created_at', { ascending: false});
+            // First get the user's blip IDs
+            const { data: userBlips } = await supabaseClient
+                .from('blips')
+                .select('id')
+                .eq('user_id', userId);
+
+            const userBlipIds = userBlips?.map(b => b.id) || [];
+
+            // Then get video replies to those blips
+            const { data: videoRepliesReceived } = userBlipIds.length > 0
+                ? await supabaseClient
+                    .from('video_replies')
+                    .select(`
+                        *,
+                        replier:users!video_replies_replied_by_fkey(id, username, avatar_url),
+                        original_blip:blips!video_replies_blip_id_fkey(id, thumbnail_url, user_id, users(username))
+                    `)
+                    .in('blip_id', userBlipIds)
+                    .order('created_at', { ascending: false})
+                : { data: [] };
 
             // Get admin action history
             const { data: adminLogs } = await supabaseClient
@@ -1651,14 +1662,12 @@
                         id,
                         video_url,
                         thumbnail_url,
-                        sender_id,
-                        recipient_id,
+                        replied_by,
                         blip_id,
-                        latitude,
-                        longitude,
+                        location_lat,
+                        location_lon,
                         created_at,
-                        sender:users!video_replies_sender_id_fkey(id, username),
-                        recipient:users!video_replies_recipient_id_fkey(id, username),
+                        replier:users!video_replies_replied_by_fkey(id, username),
                         original_blip:blips!video_replies_blip_id_fkey(id, user_id, users(username))
                     ),
                     reporter:users!video_reply_reports_reported_by_fkey(username, id)
