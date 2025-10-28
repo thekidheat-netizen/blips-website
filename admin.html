@@ -1136,10 +1136,18 @@
                 .select('*', { count: 'exact', head: true })
                 .eq('is_banned', true);
 
-            const { count: pendingCount } = await supabaseClient
+            // Count both blip_reports and announcement_reports
+            const { count: blipPendingCount } = await supabaseClient
                 .from('blip_reports')
                 .select('*', { count: 'exact', head: true })
                 .eq('status', 'pending');
+
+            const { count: announcementPendingCount } = await supabaseClient
+                .from('announcement_reports')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending');
+
+            const pendingCount = (blipPendingCount || 0) + (announcementPendingCount || 0);
 
             const { count: pendingVerifications } = await supabaseClient
                 .from('verification_applications')
@@ -1912,6 +1920,16 @@
                 `)
                 .order('created_at', { ascending: false });
 
+            // Load announcement reports (new 24-hour stories)
+            const { data: announcementReports } = await supabaseClient
+                .from('announcement_reports')
+                .select(`
+                    *,
+                    announcements(id, video_url, thumbnail_url, user_id, created_at, views_count, latitude, longitude),
+                    reporter:users!announcement_reports_reporter_id_fkey(username)
+                `)
+                .order('created_at', { ascending: false });
+
             const { data: profileReports } = await supabaseClient
                 .from('profile_reports')
                 .select(`
@@ -1971,6 +1989,7 @@
 
             allReports = [
                 ...(blipReports || []).map(r => ({ ...r, reportType: 'blip' })),
+                ...(announcementReports || []).map(r => ({ ...r, reportType: 'announcement' })),
                 ...(profileReports || []).map(r => ({ ...r, reportType: 'profile' })),
                 ...(videoReplyReports || []).map(r => ({ ...r, reportType: 'video_reply' }))
             ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -2013,6 +2032,8 @@
                     if (report.reportType === 'blip') {
                         return report.users?.username?.toLowerCase().includes(searchQuery) ||
                                report.blip_owner?.username?.toLowerCase().includes(searchQuery);
+                    } else if (report.reportType === 'announcement') {
+                        return report.reporter?.username?.toLowerCase().includes(searchQuery);
                     } else if (report.reportType === 'video_reply') {
                         return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
                                report.video_reply?.replier?.username?.toLowerCase().includes(searchQuery);
@@ -2122,6 +2143,8 @@
             let tableName;
             if (reportType === 'blip') {
                 tableName = 'blip_reports';
+            } else if (reportType === 'announcement') {
+                tableName = 'announcement_reports';
             } else if (reportType === 'video_reply') {
                 tableName = 'video_reply_reports';
             } else {
