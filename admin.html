@@ -1925,7 +1925,7 @@
                 .from('announcement_reports')
                 .select(`
                     *,
-                    announcements(id, video_url, thumbnail_url, user_id, created_at, views_count, latitude, longitude, announcement_owner:users!announcements_user_id_fkey(id, username)),
+                    announcements(id, video_url, thumbnail_url, user_id, created_at, views_count, latitude, longitude, deleted_at, deleted_by, announcement_owner:users!announcements_user_id_fkey(id, username)),
                     reporter:users!announcement_reports_reporter_id_fkey(username)
                 `)
                 .order('created_at', { ascending: false });
@@ -2697,6 +2697,24 @@
                         <div style="background: #f9f9f9; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
                             <h3 style="color: #333; margin-bottom: 15px;">Reported Announcement</h3>
 
+                            ${announcement.deleted_at ? `
+                                <div style="background: #ffe6e6; border: 2px solid #ff4444; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                                        <span style="font-size: 24px;">🗑️</span>
+                                        <strong style="color: #cc0000;">REMOVED FROM APP</strong>
+                                    </div>
+                                    <p style="color: #666; margin: 5px 0;">
+                                        <strong>Hidden from users on:</strong> ${new Date(announcement.deleted_at).toLocaleString()}
+                                    </p>
+                                    <p style="color: #666; margin: 5px 0;">
+                                        <strong>Status:</strong> Hidden from app, but kept in admin records
+                                    </p>
+                                    <p style="color: #888; font-size: 13px; margin-top: 10px;">
+                                        ℹ️ This announcement is no longer visible to users but remains in your dashboard for investigation and record-keeping.
+                                    </p>
+                                </div>
+                            ` : ''}
+
                             <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
                                 ${owner?.username ? `
                                     <div>
@@ -2732,13 +2750,17 @@
                                 <p style="color: #666; margin-top: 5px;">${new Date(announcement.created_at).toLocaleString()}</p>
                             </div>
                         </div>
-                    ` : '<p style="color: #999;">Announcement has been deleted</p>'}
+                    ` : '<p style="color: #999;">Announcement record not found</p>'}
 
                     <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
                         <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${report.reporter_id}')">View Reporter Profile</button>
                         ${announcement ? `
                             <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${announcement.user_id}')">View Owner Profile</button>
-                            <button class="btn btn-danger" onclick="deleteAnnouncementFromReport('${announcement.id}', '@${owner?.username || 'Unknown'}', '${report.id}')">Delete Announcement</button>
+                            ${!announcement.deleted_at ? `
+                                <button class="btn btn-danger" onclick="deleteAnnouncementFromReport('${announcement.id}', '@${owner?.username || 'Unknown'}', '${report.id}')">Remove from App</button>
+                            ` : `
+                                <button class="btn btn-secondary" disabled style="cursor: not-allowed;">Already Removed</button>
+                            `}
                         ` : ''}
                         <select
                             onchange="updateReportStatusFromDetail('${report.id}', this.value, '${reportType}')"
@@ -2986,11 +3008,15 @@
         }
 
         async function deleteAnnouncementFromReport(announcementId, username, reportId) {
-            if (!confirm(`Delete this announcement by ${username}? This CANNOT be undone!`)) return;
+            if (!confirm(`Remove this announcement from the app by ${username}?\n\nNote: This will hide the announcement from users but keep it in the admin dashboard for records and moderation.`)) return;
 
+            // Soft delete: mark as deleted instead of actually deleting
             const { error } = await supabaseClient
                 .from('announcements')
-                .delete()
+                .update({
+                    deleted_at: new Date().toISOString(),
+                    deleted_by: currentAdminId
+                })
                 .eq('id', announcementId);
 
             if (error) {
@@ -2998,8 +3024,8 @@
                 return;
             }
 
-            await logAdminAction('delete_announcement', null, { announcement_id: announcementId, report_id: reportId }, `Deleted reported announcement by ${username}`);
-            alert('Announcement deleted successfully');
+            await logAdminAction('soft_delete_announcement', null, { announcement_id: announcementId, report_id: reportId }, `Soft-deleted announcement by ${username} (hidden from app, kept for records)`);
+            alert('Announcement removed from app successfully.\n\nThe announcement is now hidden from users but remains in reports for your records.');
             closeReportDetail();
             loadReports();
             loadStats();
