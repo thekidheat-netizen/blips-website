@@ -1925,7 +1925,7 @@
                 .from('announcement_reports')
                 .select(`
                     *,
-                    announcements(id, video_url, thumbnail_url, user_id, created_at, views_count, latitude, longitude),
+                    announcements(id, video_url, thumbnail_url, user_id, created_at, views_count, latitude, longitude, announcement_owner:users!announcements_user_id_fkey(id, username)),
                     reporter:users!announcement_reports_reporter_id_fkey(username)
                 `)
                 .order('created_at', { ascending: false });
@@ -2033,7 +2033,8 @@
                         return report.users?.username?.toLowerCase().includes(searchQuery) ||
                                report.blip_owner?.username?.toLowerCase().includes(searchQuery);
                     } else if (report.reportType === 'announcement') {
-                        return report.reporter?.username?.toLowerCase().includes(searchQuery);
+                        return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
+                               report.announcements?.announcement_owner?.username?.toLowerCase().includes(searchQuery);
                     } else if (report.reportType === 'video_reply') {
                         return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
                                report.video_reply?.replier?.username?.toLowerCase().includes(searchQuery);
@@ -2077,6 +2078,12 @@
                                 reportedByUser = report.users?.username;
                                 reportedUser = report.blip_owner?.username;
                                 reportedUserId = report.blip_owner_id;
+                            } else if (report.reportType === 'announcement') {
+                                badgeColor = '#FFF0E6';
+                                badgeTextColor = '#FF9800';
+                                reportedByUser = report.reporter?.username;
+                                reportedUser = report.announcements?.announcement_owner?.username;
+                                reportedUserId = report.announcements?.user_id;
                             } else if (report.reportType === 'video_reply') {
                                 badgeColor = '#FFF4E6';
                                 badgeTextColor = '#FF8C00';
@@ -2097,11 +2104,13 @@
                                 <td>
                                     ${report.reportType === 'blip' && report.blips?.thumbnail_url
                                         ? `<img src="${report.blips.thumbnail_url}" style="width: 60px; height: 60px; border-radius: 8px; cursor: pointer;" onclick="playBlipVideo('${report.blips.video_url}', 'Reported')">`
-                                        : report.reportType === 'video_reply' && report.video_reply?.thumbnail_url
-                                            ? `<img src="${report.video_reply.thumbnail_url}" style="width: 60px; height: 60px; border-radius: 8px; cursor: pointer;" onclick="playBlipVideo('${report.video_reply.video_url}', 'Video Reply')">`
-                                            : report.reportType === 'profile' && report.reported_user?.avatar_url
-                                                ? `<img src="${report.reported_user.avatar_url}" class="avatar">`
-                                                : '📹'
+                                        : report.reportType === 'announcement' && report.announcements?.thumbnail_url
+                                            ? `<img src="${report.announcements.thumbnail_url}" style="width: 60px; height: 60px; border-radius: 8px; cursor: pointer;" onclick="playBlipVideo('${report.announcements.video_url}', 'Announcement')">`
+                                            : report.reportType === 'video_reply' && report.video_reply?.thumbnail_url
+                                                ? `<img src="${report.video_reply.thumbnail_url}" style="width: 60px; height: 60px; border-radius: 8px; cursor: pointer;" onclick="playBlipVideo('${report.video_reply.video_url}', 'Video Reply')">`
+                                                : report.reportType === 'profile' && report.reported_user?.avatar_url
+                                                    ? `<img src="${report.reported_user.avatar_url}" class="avatar">`
+                                                    : '📹'
                                     }
                                 </td>
                                 <td>
@@ -2640,6 +2649,108 @@
                         </select>
                     </div>
                 `;
+            } else if (reportType === 'announcement') {
+                // Announcement report
+                const announcement = report.announcements;
+                const reporter = report.reporter;
+                const owner = announcement?.announcement_owner;
+
+                html = `
+                    <h2 style="margin-bottom: 20px;">Announcement Report Details</h2>
+
+                    <div style="background: #FFF0E6; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #FF9800;">
+                        <h3 style="color: #FF9800; margin-bottom: 15px;">Report Information</h3>
+
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <strong style="color: #333;">Category:</strong>
+                                <p style="color: #666; margin-top: 5px;">${report.reason}</p>
+                            </div>
+                            <div>
+                                <strong style="color: #333;">Status:</strong>
+                                <p style="margin-top: 5px;">
+                                    <span class="badge" style="background: ${report.status === 'pending' ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #333;">Additional Details:</strong>
+                            <p style="color: #666; margin-top: 5px; white-space: pre-wrap; background: white; padding: 10px; border-radius: 6px;">${report.description || report.details || 'No additional details provided'}</p>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                            <div>
+                                <strong style="color: #333;">Reported By:</strong>
+                                <p style="margin-top: 5px;">
+                                    <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${report.reporter_id}')">@${reporter?.username || 'Unknown'}</span>
+                                </p>
+                            </div>
+                            <div>
+                                <strong style="color: #333;">Reported On:</strong>
+                                <p style="color: #666; margin-top: 5px;">${new Date(report.created_at).toLocaleString()}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${announcement ? `
+                        <div style="background: #f9f9f9; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                            <h3 style="color: #333; margin-bottom: 15px;">Reported Announcement</h3>
+
+                            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+                                ${owner?.username ? `
+                                    <div>
+                                        <strong style="color: #333;">Announcement Owner:</strong>
+                                        <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${announcement.user_id}')">@${owner.username}</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+
+                            <video controls style="width: 100%; border-radius: 8px; margin-bottom: 20px; max-height: 400px; background: #000;">
+                                <source src="${announcement.video_url}" type="video/mp4">
+                                Your browser does not support the video tag.
+                            </video>
+
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                                <div>
+                                    <strong style="color: #333;">Location:</strong>
+                                    <p style="color: #666; margin-top: 5px;">
+                                        ${announcement.latitude && announcement.longitude
+                                            ? `📍 ${announcement.latitude.toFixed(6)}, ${announcement.longitude.toFixed(6)}<br><a href="https://www.google.com/maps?q=${announcement.latitude},${announcement.longitude}" target="_blank" style="color: #4A90E2;">View on Google Maps</a>`
+                                            : 'No location data'
+                                        }
+                                    </p>
+                                </div>
+                                <div>
+                                    <strong style="color: #333;">Views:</strong>
+                                    <p style="color: #666; margin-top: 5px;">👁️ ${announcement.views_count || 0} views</p>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 15px;">
+                                <strong style="color: #333;">Posted:</strong>
+                                <p style="color: #666; margin-top: 5px;">${new Date(announcement.created_at).toLocaleString()}</p>
+                            </div>
+                        </div>
+                    ` : '<p style="color: #999;">Announcement has been deleted</p>'}
+
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+                        <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${report.reporter_id}')">View Reporter Profile</button>
+                        ${announcement ? `
+                            <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${announcement.user_id}')">View Owner Profile</button>
+                            <button class="btn btn-danger" onclick="deleteAnnouncementFromReport('${announcement.id}', '@${owner?.username || 'Unknown'}', '${report.id}')">Delete Announcement</button>
+                        ` : ''}
+                        <select
+                            onchange="updateReportStatusFromDetail('${report.id}', this.value, '${reportType}')"
+                            style="padding: 8px 12px; border-radius: 6px; border: 2px solid #ddd; font-size: 14px; cursor: pointer; background: white;"
+                        >
+                            <option value="${report.status}" selected>${report.status}</option>
+                            ${report.status !== 'pending' ? '<option value="pending">pending</option>' : ''}
+                            ${report.status !== 'reviewed' ? '<option value="reviewed">reviewed</option>' : ''}
+                            ${report.status !== 'dismissed' ? '<option value="dismissed">dismissed</option>' : ''}
+                        </select>
+                    </div>
+                `;
             } else if (reportType === 'video_reply') {
                 // Video reply report
                 const videoReply = report.video_reply;
@@ -2869,6 +2980,26 @@
 
             await logAdminAction('delete_video_reply', null, { video_reply_id: videoReplyId, report_id: reportId }, `Deleted reported video reply by ${username}`);
             alert('Video reply deleted successfully');
+            closeReportDetail();
+            loadReports();
+            loadStats();
+        }
+
+        async function deleteAnnouncementFromReport(announcementId, username, reportId) {
+            if (!confirm(`Delete this announcement by ${username}? This CANNOT be undone!`)) return;
+
+            const { error } = await supabaseClient
+                .from('announcements')
+                .delete()
+                .eq('id', announcementId);
+
+            if (error) {
+                alert('Error: ' + error.message);
+                return;
+            }
+
+            await logAdminAction('delete_announcement', null, { announcement_id: announcementId, report_id: reportId }, `Deleted reported announcement by ${username}`);
+            alert('Announcement deleted successfully');
             closeReportDetail();
             loadReports();
             loadStats();
