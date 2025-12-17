@@ -272,7 +272,7 @@
         // Initialize Supabase client
         const supabaseUrl = 'https://obtsdsztblemlbvcrcdy.supabase.co';
         const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9idHNkc3p0YmxlbWxidmNyY2R5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2MDMwMjcsImV4cCI6MjA3NTE3OTAyN30.j0OJw4QuRRnbGvNj8rQ40OV8gZgGaahSP-I2MB6c8nQ';
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+        const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
 
         const loginForm = document.getElementById('loginForm');
         const loginBtn = document.getElementById('loginBtn');
@@ -298,10 +298,10 @@
 
         // Check if user is already logged in
         async function checkAuth() {
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session } } = await supabaseClient.auth.getSession();
             if (session) {
                 // Check if user is admin
-                const { data: user } = await supabase
+                const { data: user } = await supabaseClient
                     .from('users')
                     .select('is_admin')
                     .eq('id', session.user.id)
@@ -326,7 +326,7 @@
             try {
                 // Sign in with Supabase
                 console.log('Attempting sign in...');
-                const { data, error } = await supabase.auth.signInWithPassword({
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email: email,
                     password: password,
                 });
@@ -336,7 +336,7 @@
 
                 // Check if user is admin
                 console.log('Checking admin status...');
-                const { data: user, error: userError } = await supabase
+                const { data: user, error: userError } = await supabaseClient
                     .from('users')
                     .select('is_admin')
                     .eq('id', data.user.id)
@@ -346,7 +346,7 @@
                 if (userError) throw new Error('Error fetching user');
 
                 if (!user?.is_admin) {
-                    await supabase.auth.signOut();
+                    await supabaseClient.auth.signOut();
                     throw new Error('Access denied. Admin privileges required.');
                 }
 
