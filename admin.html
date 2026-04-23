@@ -682,6 +682,10 @@
                         <div class="number" id="bannedUsers">-</div>
                     </div>
                     <div class="stat-card">
+                        <h3>Deleted Users</h3>
+                        <div class="number" id="deletedUsers">-</div>
+                    </div>
+                    <div class="stat-card">
                         <h3>Pending Reports</h3>
                         <div class="number" id="pendingReports">-</div>
                     </div>
@@ -704,6 +708,14 @@
                     <!-- Users Tab -->
                     <div id="users-tab" class="tab-content active">
                         <h2 style="margin-bottom: 20px;">User Management</h2>
+                        <!-- Status filter: lets admin focus on Active / Banned / Deleted users.
+                             "All" includes soft-deleted accounts so admins can see everyone for moderation. -->
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                            <button class="btn btn-primary" id="userFilterAll" onclick="setUserFilter('all')">All</button>
+                            <button class="btn btn-secondary" id="userFilterActive" onclick="setUserFilter('active')">Active</button>
+                            <button class="btn btn-secondary" id="userFilterBanned" onclick="setUserFilter('banned')">Banned only</button>
+                            <button class="btn btn-secondary" id="userFilterDeleted" onclick="setUserFilter('deleted')">Soft-deleted</button>
+                        </div>
                         <div id="usersTable"></div>
                     </div>
 
@@ -1015,6 +1027,7 @@
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         let allUsers = [];
+        let currentUserFilter = 'all'; // 'all' | 'active' | 'banned' | 'deleted'
         let currentAdminId = null;
         let allAppeals = [];
         let currentAppealFilter = 'unresolved'; // Default to showing unresolved appeals
@@ -1136,6 +1149,17 @@
                 .select('*', { count: 'exact', head: true })
                 .eq('is_banned', true);
 
+            // Soft-deleted users — exposed by migration 20260422000001.
+            // delete_user_completely sets deleted_at + is_banned, so this
+            // count is a SUBSET of bannedCount above. We still surface it
+            // separately because the workflows differ: banned users may be
+            // unbanned, but soft-deleted users need an explicit restore
+            // (which also clears deleted_at and may restore the username).
+            const { count: deletedCount } = await supabaseClient
+                .from('users')
+                .select('*', { count: 'exact', head: true })
+                .not('deleted_at', 'is', null);
+
             // Count both blip_reports and announcement_reports
             const { count: blipPendingCount } = await supabaseClient
                 .from('blip_reports')
@@ -1157,6 +1181,7 @@
             document.getElementById('totalUsers').textContent = userCount || 0;
             document.getElementById('totalBlips').textContent = blipCount || 0;
             document.getElementById('bannedUsers').textContent = bannedCount || 0;
+            document.getElementById('deletedUsers').textContent = deletedCount || 0;
             document.getElementById('pendingReports').textContent = pendingCount || 0;
             document.getElementById('pendingVerifications').textContent = pendingVerifications || 0;
         }
@@ -1173,7 +1198,45 @@
             }
 
             allUsers = users;
-            displayUsers(users);
+            // Honor whatever status filter is currently active. On first
+            // load this is 'all' so behavior matches the old default.
+            displayUsers(applyUserFilter(allUsers));
+        }
+
+        // Apply currentUserFilter (status) on top of any user list before display.
+        // Soft-deleted accounts are kept in the DB by delete_user_completely
+        // (migration 20260422000001). The filter lets admins toggle between
+        // viewing active accounts only vs. seeing the deleted ones for
+        // moderation review (e.g. someone deleted to evade a ban).
+        function applyUserFilter(users) {
+            switch (currentUserFilter) {
+                case 'active':
+                    return users.filter(u => !u.is_banned && !u.deleted_at);
+                case 'banned':
+                    // "Banned only" = banned but NOT soft-deleted, since
+                    // soft-deletes also flip is_banned on. Keeps the two
+                    // workflows separate.
+                    return users.filter(u => u.is_banned && !u.deleted_at);
+                case 'deleted':
+                    return users.filter(u => !!u.deleted_at);
+                case 'all':
+                default:
+                    return users;
+            }
+        }
+
+        function setUserFilter(filter) {
+            currentUserFilter = filter;
+            // Toggle button active state
+            ['All', 'Active', 'Banned', 'Deleted'].forEach(name => {
+                const btn = document.getElementById('userFilter' + name);
+                if (!btn) return;
+                btn.className = (name.toLowerCase() === filter)
+                    ? 'btn btn-primary'
+                    : 'btn btn-secondary';
+            });
+            // Re-run search with whatever's in the box (keeps query + filter in sync)
+            searchUsers();
         }
 
         function displayUsers(users) {
@@ -1196,7 +1259,7 @@
                     </thead>
                     <tbody>
                         ${users.map(user => `
-                            <tr>
+                            <tr${user.deleted_at ? ' style="opacity: 0.7;"' : ''}>
                                 <td>
                                     ${user.avatar_url
                                         ? `<img src="${user.avatar_url}" class="avatar">`
@@ -1206,19 +1269,31 @@
                                 <td>
                                     <span class="clickable-username" onclick="openUserDetail('${user.id}')">@${user.username || 'N/A'}</span>
                                     ${user.is_admin ? '<span class="badge badge-admin" title="Admin User">ADMIN</span>' : ''}
+                                    ${user.deleted_at && user.deleted_username
+                                        ? `<div style="font-size: 11px; color: #999; margin-top: 4px;">was: @${user.deleted_username}</div>`
+                                        : ''}
                                 </td>
                                 <td>${user.email || 'N/A'}</td>
                                 <td>
-                                    ${user.is_banned ? '<span class="badge badge-banned">BANNED</span>' : '<span class="badge" style="background: #4CAF50; color: white;">ACTIVE</span>'}
+                                    ${user.deleted_at
+                                        ? `<span class="badge" style="background: #9E9E9E; color: white;" title="Soft-deleted on ${new Date(user.deleted_at).toLocaleString()}">DELETED</span>`
+                                        : (user.is_banned
+                                            ? '<span class="badge badge-banned">BANNED</span>'
+                                            : '<span class="badge" style="background: #4CAF50; color: white;">ACTIVE</span>')
+                                    }
                                 </td>
                                 <td>${new Date(user.created_at).toLocaleDateString()}</td>
                                 <td>
                                     <button class="btn btn-info" onclick="openUserDetail('${user.id}')">View</button>
-                                    ${user.is_banned
-                                        ? `<button class="btn btn-success" onclick="unbanUser('${user.id}', '${user.username}')">Unban</button>`
-                                        : `<button class="btn btn-warning" onclick="banUser('${user.id}', '${user.username}')">Ban</button>`
+                                    ${user.deleted_at
+                                        ? `<button class="btn btn-success" onclick="restoreUser('${user.id}', '${user.deleted_username || user.username}')">Restore</button>`
+                                        : (user.is_banned
+                                            ? `<button class="btn btn-success" onclick="unbanUser('${user.id}', '${user.username}')">Unban</button>`
+                                            : `<button class="btn btn-warning" onclick="banUser('${user.id}', '${user.username}')">Ban</button>`)
                                     }
-                                    <button class="btn btn-danger" onclick="deleteUser('${user.id}', '${user.username}')">Delete</button>
+                                    ${user.deleted_at
+                                        ? ''
+                                        : `<button class="btn btn-danger" onclick="deleteUser('${user.id}', '${user.username}')">Delete</button>`}
                                 </td>
                             </tr>
                         `).join('')}
@@ -1231,24 +1306,28 @@
 
         function searchUsers() {
             const query = document.getElementById('userSearch').value.toLowerCase().trim();
+            const filtered = applyUserFilter(allUsers);
 
             if (!query) {
-                displayUsers(allUsers);
+                displayUsers(filtered);
                 return;
             }
 
-            const filtered = allUsers.filter(user =>
+            // Search both current AND original (deleted_username) so admins
+            // can find someone by the name they used before soft-deletion.
+            const matches = filtered.filter(user =>
                 user.username?.toLowerCase().includes(query) ||
+                user.deleted_username?.toLowerCase().includes(query) ||
                 user.email?.toLowerCase().includes(query) ||
                 user.id?.toLowerCase().includes(query)
             );
 
-            displayUsers(filtered);
+            displayUsers(matches);
         }
 
         function clearSearch() {
             document.getElementById('userSearch').value = '';
-            displayUsers(allUsers);
+            displayUsers(applyUserFilter(allUsers));
         }
 
         async function openUserDetail(userId) {
@@ -1325,6 +1404,15 @@
                         <p>@${user.username || 'N/A'}</p>
                         <p>${user.email || 'No email'}</p>
                         <p>${user.bio || 'No bio'}</p>
+                        ${user.deleted_at ? `
+                            <!-- Soft-delete banner: makes it obvious this account self-deleted -->
+                            <div style="margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: rgba(158,158,158,0.15); border: 1px solid rgba(158,158,158,0.4); color: #ddd;">
+                                <strong>🗑️ Soft-deleted account</strong><br>
+                                Deleted at: ${new Date(user.deleted_at).toLocaleString()}<br>
+                                ${user.deleted_username ? `Original username: <strong>@${user.deleted_username}</strong><br>` : ''}
+                                Their content stays in the DB for moderation but is hidden from the app.
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
 
@@ -1345,25 +1433,35 @@
                         <div class="user-stat-value">${user.is_banned ? 'YES' : 'NO'}</div>
                         <div class="user-stat-label">Banned</div>
                     </div>
+                    <div class="user-stat">
+                        <div class="user-stat-value">${user.deleted_at ? 'YES' : 'NO'}</div>
+                        <div class="user-stat-label">Soft-Deleted</div>
+                    </div>
                 </div>
 
                 <div class="action-section">
                     <h3>Admin Actions</h3>
                     <div class="action-grid">
-                        ${!user.is_banned
-                            ? `<button class="btn btn-warning" onclick="banUser('${user.id}', '${user.username}')">Ban User</button>`
-                            : `<button class="btn btn-success" onclick="unbanUser('${user.id}', '${user.username}')">Unban User</button>`
-                        }
-                        ${!user.is_verified
-                            ? `<button class="btn btn-primary" onclick="manualVerifyUser('${user.id}', '${user.username}')">✓ Verify User</button>`
-                            : `<button class="btn btn-secondary" onclick="manualUnverifyUser('${user.id}', '${user.username}')">Remove Verification</button>`
-                        }
-                        <button class="btn btn-info" onclick="promptUsernameChange('${user.id}', '${user.username}')">Change Username</button>
-                        <button class="btn btn-info" onclick="promptDisplayNameChange('${user.id}', '${user.display_name || ''}')">Change Display Name</button>
-                        <button class="btn btn-info" onclick="promptEmailChange('${user.id}', '${user.email || ''}', '${user.username}')">Change Email</button>
-                        <button class="btn btn-info" onclick="resetUserPassword('${user.id}', '${user.username}')">Reset Password</button>
-                        <button class="btn btn-warning" onclick="deleteAllUserBlips('${user.id}', '${user.username}')">Delete All Blips</button>
-                        <button class="btn btn-danger" onclick="deleteUser('${user.id}', '${user.username}')">Delete Account</button>
+                        ${user.deleted_at ? `
+                            <!-- Soft-deleted accounts get a Restore button instead of the
+                                 ban/delete actions, since those don't apply (already gone). -->
+                            <button class="btn btn-success" onclick="restoreUser('${user.id}', '${user.deleted_username || user.username}')">♻️ Restore Account</button>
+                        ` : `
+                            ${!user.is_banned
+                                ? `<button class="btn btn-warning" onclick="banUser('${user.id}', '${user.username}')">Ban User</button>`
+                                : `<button class="btn btn-success" onclick="unbanUser('${user.id}', '${user.username}')">Unban User</button>`
+                            }
+                            ${!user.is_verified
+                                ? `<button class="btn btn-primary" onclick="manualVerifyUser('${user.id}', '${user.username}')">✓ Verify User</button>`
+                                : `<button class="btn btn-secondary" onclick="manualUnverifyUser('${user.id}', '${user.username}')">Remove Verification</button>`
+                            }
+                            <button class="btn btn-info" onclick="promptUsernameChange('${user.id}', '${user.username}')">Change Username</button>
+                            <button class="btn btn-info" onclick="promptDisplayNameChange('${user.id}', '${user.display_name || ''}')">Change Display Name</button>
+                            <button class="btn btn-info" onclick="promptEmailChange('${user.id}', '${user.email || ''}', '${user.username}')">Change Email</button>
+                            <button class="btn btn-info" onclick="resetUserPassword('${user.id}', '${user.username}')">Reset Password</button>
+                            <button class="btn btn-warning" onclick="deleteAllUserBlips('${user.id}', '${user.username}')">Delete All Blips</button>
+                            <button class="btn btn-danger" onclick="deleteUser('${user.id}', '${user.username}')">Delete Account</button>
+                        `}
                     </div>
                 </div>
 
@@ -1386,11 +1484,27 @@
                                         <div style="flex: 1;">
                                             <div style="margin-bottom: 10px;">
                                                 <strong style="color: #333; font-size: 16px;">Blip Details</strong>
+                                                <!-- Status badges: surfaces visibility, scheduling, and direct/personalized
+                                                     status so admins can tell at a glance what kind of blip this is. -->
+                                                ${blip.visibility && blip.visibility !== 'public' ? `<span class="badge" style="background: #607D8B; color: white; margin-left: 6px; font-size: 10px;">${blip.visibility.toUpperCase()}</span>` : ''}
+                                                ${blip.is_scheduled ? `<span class="badge" style="background: #FF9800; color: white; margin-left: 6px; font-size: 10px;" title="Scheduled blip">⏰ SCHEDULED</span>` : ''}
+                                                ${blip.is_personalized ? `<span class="badge" style="background: #9C27B0; color: white; margin-left: 6px; font-size: 10px;" title="Personalized / direct">🎯 DIRECT</span>` : ''}
                                             </div>
                                             <div style="display: grid; gap: 8px; font-size: 14px; color: #666;">
                                                 <div>
                                                     <strong>📅 Created:</strong> ${new Date(blip.created_at).toLocaleString()}
                                                 </div>
+                                                ${blip.scheduled_at ? `
+                                                    <div>
+                                                        <strong>⏰ Scheduled for:</strong> ${new Date(blip.scheduled_at).toLocaleString()}
+                                                        ${new Date(blip.scheduled_at) > new Date() ? ' <span style="color:#FF9800;">(future)</span>' : ' <span style="color:#999;">(past)</span>'}
+                                                    </div>
+                                                ` : ''}
+                                                ${blip.delete_at ? `
+                                                    <div>
+                                                        <strong>🗑️ Auto-delete at:</strong> ${new Date(blip.delete_at).toLocaleString()}
+                                                    </div>
+                                                ` : ''}
                                                 ${blip.latitude && blip.longitude ? `
                                                     <div>
                                                         <strong>📍 Location:</strong> ${blip.latitude.toFixed(6)}, ${blip.longitude.toFixed(6)}
@@ -1560,7 +1674,9 @@
                 'edit_user': '✏️ User Edited',
                 'verification_approved': '✓ Verification Approved',
                 'verification_rejected': '✗ Verification Rejected',
-                'verification_removed': '✗ Verification Removed'
+                'verification_removed': '✗ Verification Removed',
+                'restore_user': '♻️ User Restored',
+                'soft_delete_announcement': '🗑️ Announcement Removed'
             };
             return types[actionType] || actionType;
         }
@@ -1664,6 +1780,63 @@
 
             await logAdminAction('delete_user', userId, null, notes);
             alert(`@${username} deleted completely (both auth and profile)`);
+            loadUsers();
+            loadStats();
+            closeUserDetail();
+        }
+
+        // Restore a soft-deleted account.
+        // delete_user_completely (migration 20260422000001) sets deleted_at,
+        // is_banned, and anonymizes username to "__deleted_<id>_<ts>" while
+        // preserving the original in deleted_username. To undo, we clear
+        // deleted_at + is_banned and try to put the original username back —
+        // unless someone else has already grabbed it, in which case we leave
+        // the anonymized name and the admin can rename manually.
+        async function restoreUser(userId, originalUsername) {
+            if (!confirm(`Restore @${originalUsername}?\n\nThis will:\n• Clear the deleted_at flag\n• Lift the ban (is_banned = false)\n• Try to put their original username back\n\nThe user will be able to sign in again.`)) return;
+
+            const notes = prompt('Reason for restoring this account:');
+            if (!notes) return;
+
+            // 1. See whether the original username is still free.
+            let restoreUsername = originalUsername;
+            if (originalUsername) {
+                const { data: clash } = await supabaseClient
+                    .from('users')
+                    .select('id')
+                    .eq('username', originalUsername)
+                    .neq('id', userId)
+                    .maybeSingle();
+
+                if (clash) {
+                    if (!confirm(`The username @${originalUsername} is already taken by another account. Restore the account but KEEP the anonymized username for now? (You can rename them manually after.)`)) {
+                        return;
+                    }
+                    restoreUsername = null; // skip rename
+                }
+            }
+
+            // 2. Build the patch.
+            const patch = {
+                deleted_at: null,
+                is_banned: false,
+                ban_reason: null,
+                deleted_username: null,
+            };
+            if (restoreUsername) patch.username = restoreUsername;
+
+            const { error } = await supabaseClient
+                .from('users')
+                .update(patch)
+                .eq('id', userId);
+
+            if (error) {
+                alert('Error: ' + error.message);
+                return;
+            }
+
+            await logAdminAction('restore_user', userId, { restored_username: restoreUsername }, `Restored soft-deleted account: ${notes}`);
+            alert(`@${restoreUsername || originalUsername || userId} restored.`);
             loadUsers();
             loadStats();
             closeUserDetail();
@@ -1774,18 +1947,37 @@
         async function deleteAllUserBlips(userId, username) {
             if (!confirm(`Delete ALL blips by @${username}? This CANNOT be undone!`)) return;
 
-            const { error } = await supabaseClient
+            // Fetch the user's blip IDs, then call admin_delete_blip per row.
+            // We can't bulk-delete via the RPC (it takes a single ID), but
+            // looping is fine — admin operations are infrequent and per-blip
+            // cleanup of likes/comments/views is what we want.
+            const { data: rows, error: fetchErr } = await supabaseClient
                 .from('blips')
-                .delete()
+                .select('id')
                 .eq('user_id', userId);
 
-            if (error) {
-                alert('Error: ' + error.message);
+            if (fetchErr) {
+                alert('Error fetching blips: ' + fetchErr.message);
                 return;
             }
 
-            await logAdminAction('delete_all_blips', userId, null, `Deleted all blips by @${username}`);
-            alert(`All blips by @${username} deleted`);
+            const blipIds = (rows || []).map(r => r.id);
+            let failures = 0;
+            for (const blipId of blipIds) {
+                const { error } = await supabaseClient
+                    .rpc('admin_delete_blip', { p_blip_id: blipId });
+                if (error) {
+                    console.error('Failed to delete blip', blipId, error);
+                    failures++;
+                }
+            }
+
+            await logAdminAction('delete_all_blips', userId, { count: blipIds.length, failures }, `Deleted ${blipIds.length - failures}/${blipIds.length} blips by @${username}`);
+            if (failures > 0) {
+                alert(`Deleted ${blipIds.length - failures} of ${blipIds.length} blips. ${failures} failed — check console.`);
+            } else {
+                alert(`All ${blipIds.length} blips by @${username} deleted`);
+            }
             loadStats();
             openUserDetail(userId);
         }
@@ -2501,10 +2693,13 @@
         async function deleteBlipFromDetail(blipId, username) {
             if (!confirm(`Delete this blip by ${username}? This CANNOT be undone!`)) return;
 
-            const { error } = await supabaseClient
-                .from('blips')
-                .delete()
-                .eq('id', blipId);
+            // Use the admin_delete_blip SECURITY DEFINER RPC instead of a
+            // direct .delete(). The RPC verifies the caller is an admin
+            // server-side, cleans up dependent rows (likes, comments, views,
+            // recipients, replies) in the right order, and won't be blocked
+            // by RLS the way a raw delete can be.
+            const { data, error } = await supabaseClient
+                .rpc('admin_delete_blip', { p_blip_id: blipId });
 
             if (error) {
                 alert('Error: ' + error.message);
@@ -2970,10 +3165,10 @@
         async function deleteBlipFromReport(blipId, username, reportId) {
             if (!confirm(`Delete this blip by ${username}? This CANNOT be undone!`)) return;
 
+            // Use admin_delete_blip RPC (handles dependent-row cleanup +
+            // server-side admin check). See deleteBlipFromDetail for context.
             const { error } = await supabaseClient
-                .from('blips')
-                .delete()
-                .eq('id', blipId);
+                .rpc('admin_delete_blip', { p_blip_id: blipId });
 
             if (error) {
                 alert('Error: ' + error.message);
@@ -3010,14 +3205,13 @@
         async function deleteAnnouncementFromReport(announcementId, username, reportId) {
             if (!confirm(`Remove this announcement from the app by ${username}?\n\nNote: This will hide the announcement from users but keep it in the admin dashboard for records and moderation.`)) return;
 
-            // Soft delete: mark as deleted instead of actually deleting
+            // Use the soft_delete_announcement SECURITY DEFINER RPC instead of
+            // a direct .update. The RPC verifies the caller is an admin
+            // server-side and sets deleted_at/deleted_by atomically. Falling
+            // back to the legacy update path would still work but skips the
+            // server-side admin check.
             const { error } = await supabaseClient
-                .from('announcements')
-                .update({
-                    deleted_at: new Date().toISOString(),
-                    deleted_by: currentAdminId
-                })
-                .eq('id', announcementId);
+                .rpc('soft_delete_announcement', { announcement_id: announcementId });
 
             if (error) {
                 alert('Error: ' + error.message);
@@ -4017,13 +4211,30 @@
             }
         });
 
-        // Check if already logged in
-        supabaseClient.auth.getSession().then(({ data: { session } }) => {
-            if (session) {
-                currentAdminId = session.user.id;
-                document.getElementById('app').className = 'logged-in';
-                loadDashboard();
+        // Check if already logged in.
+        // Re-verify is_admin on every page load — admin-login.html checks it
+        // at sign-in time, but if someone navigates directly to admin.html with
+        // a non-admin Supabase session (e.g. they used the mobile app, then
+        // hit this URL), we need a second gate. Force-signout if not admin.
+        supabaseClient.auth.getSession().then(async ({ data: { session } }) => {
+            if (!session) return;
+
+            const { data: row, error } = await supabaseClient
+                .from('users')
+                .select('is_admin, is_banned, deleted_at')
+                .eq('id', session.user.id)
+                .single();
+
+            if (error || !row?.is_admin || row.is_banned || row.deleted_at) {
+                console.warn('Non-admin or deleted/banned session detected — signing out');
+                await supabaseClient.auth.signOut();
+                window.location.href = '/admin-login.html';
+                return;
             }
+
+            currentAdminId = session.user.id;
+            document.getElementById('app').className = 'logged-in';
+            loadDashboard();
         });
     </script>
 </body>
