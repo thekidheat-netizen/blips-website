@@ -840,19 +840,42 @@
                     <!-- Admin Drops Tab -->
                     <div id="admin-drops-tab" class="tab-content">
                         <h2 style="margin-bottom: 6px; color: #fff;">💰 Blip Coins</h2>
-                        <p style="margin-bottom: 24px; color: #888; font-size: 14px;">
+                        <p style="margin-bottom: 20px; color: #888; font-size: 14px;">
                             Drop geo-located coins. Users walk within the geofence and watch the full media to claim. Value is hidden on the map — they only see the tier color.
                         </p>
 
-                        <!-- Mode toggle: single coin vs bulk city drop -->
-                        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-                            <button class="btn btn-primary" id="dropModeSingleBtn" onclick="setDropMode('single')" style="flex: 1; padding: 14px;">
-                                🪙 Drop a Single Coin
+                        <!-- Sub-tab nav (Drop / Browse / Audit). Pill-style, less prominent than top-level tabs. -->
+                        <div style="display:flex; gap:8px; margin-bottom:24px; padding:6px; background:#0a0a0a; border:1px solid #222; border-radius:10px; width:fit-content;">
+                            <button class="adminDropsSubTab active" id="adminDropsSubTabDropBtn" onclick="setAdminDropsSubTab('drop')"
+                                    style="padding:9px 18px; border:none; border-radius:7px; background:linear-gradient(135deg,#00d4ff 0%,#0099ff 100%); color:#000; font-weight:700; font-size:13px; cursor:pointer;">
+                                🪙 Drop
                             </button>
-                            <button class="btn btn-secondary" id="dropModeBulkBtn" onclick="setDropMode('bulk')" style="flex: 1; padding: 14px;">
-                                🎯 Bulk Drop in a City
+                            <button class="adminDropsSubTab" id="adminDropsSubTabBrowseBtn" onclick="setAdminDropsSubTab('browse')"
+                                    style="padding:9px 18px; border:none; border-radius:7px; background:transparent; color:#888; font-weight:600; font-size:13px; cursor:pointer;">
+                                🔍 Browse
+                            </button>
+                            <button class="adminDropsSubTab" id="adminDropsSubTabAuditBtn" onclick="setAdminDropsSubTab('audit')"
+                                    style="padding:9px 18px; border:none; border-radius:7px; background:transparent; color:#888; font-weight:600; font-size:13px; cursor:pointer;">
+                                📊 Audit
                             </button>
                         </div>
+
+                        <!-- ============================================================
+                             SUB-TAB 1: DROP
+                             Holds the existing single/bulk forms unchanged + a new
+                             video_duration_seconds input on each + a success callout
+                             that surfaces the generated coin_code(s) after create.
+                             ============================================================ -->
+                        <div id="adminDropsSubTabDrop" class="adminDropsSubTabPane">
+                            <!-- Mode toggle: single coin vs bulk city drop (inside Drop sub-tab now) -->
+                            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                                <button class="btn btn-primary" id="dropModeSingleBtn" onclick="setDropMode('single')" style="flex: 1; padding: 14px;">
+                                    🪙 Drop a Single Coin
+                                </button>
+                                <button class="btn btn-secondary" id="dropModeBulkBtn" onclick="setDropMode('bulk')" style="flex: 1; padding: 14px;">
+                                    🎯 Bulk Drop in a City
+                                </button>
+                            </div>
 
                         <!-- ============ SINGLE COIN MODE ============ -->
                         <div id="dropModeSingle" style="background: #0a0a0a; border: 1px solid #222; border-radius: 12px; padding: 24px; margin-bottom: 30px;">
@@ -930,6 +953,11 @@
                                 <input type="file" id="dropMedia" accept="video/*,image/*" style="width: 100%; padding: 10px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 13px;">
                                 <div id="mediaUploadProgress" style="display: none; margin-top: 8px; padding: 8px; background: rgba(0,212,255,0.1); border-radius: 6px; color: #00d4ff; font-size: 12px;"></div>
                             </div>
+                            <div style="margin-bottom: 16px;">
+                                <label style="display: block; margin-bottom: 6px; color: #888; font-size: 12px;">⏱️ Video duration (seconds)</label>
+                                <input type="number" id="dropVideoDuration" min="1" step="1" placeholder="e.g. 15" style="width: 100%; padding: 11px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 14px;">
+                                <small style="display:block; margin-top:4px; color:#666; font-size:11px;">Required for server-side watch validation. Leave blank for instant-claim coins.</small>
+                            </div>
 
                             <h3 style="margin: 22px 0 14px; color: #00d4ff; font-size: 16px;">📬 Step 4: Push notification (optional)</h3>
                             <div style="margin-bottom: 14px;">
@@ -944,6 +972,9 @@
                             <button class="btn btn-primary" onclick="createAdminDrop()" style="width: 100%; padding: 14px; font-size: 15px; font-weight: 700;">
                                 🪙 Drop the Coin
                             </button>
+
+                            <!-- Success callout — populated by createAdminDrop() with the new coin's coin_code. -->
+                            <div id="singleDropResultCallout" style="display:none; margin-top:18px; padding:16px; background:rgba(0,212,255,0.08); border:1px solid #00d4ff; border-radius:10px; color:#fff;"></div>
                         </div>
 
                         <!-- ============ BULK DROP MODE ============ -->
@@ -1021,6 +1052,11 @@
                                 <input type="file" id="bulkMedia" accept="video/*,image/*" style="width: 100%; padding: 10px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 13px;">
                                 <div id="bulkMediaProgress" style="display: none; margin-top: 8px; padding: 8px; background: rgba(0,212,255,0.1); border-radius: 6px; color: #00d4ff; font-size: 12px;"></div>
                             </div>
+                            <div style="margin-bottom: 14px;">
+                                <label style="display: block; margin-bottom: 6px; color: #888; font-size: 12px;">⏱️ Video duration (seconds)</label>
+                                <input type="number" id="bulkVideoDuration" min="1" step="1" placeholder="e.g. 15" style="width: 100%; padding: 11px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 14px;">
+                                <small style="display:block; margin-top:4px; color:#666; font-size:11px;">Required for server-side watch validation. Leave blank for instant-claim coins.</small>
+                            </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
                                 <div>
                                     <label style="display: block; margin-bottom: 6px; color: #888; font-size: 12px;">Expires at</label>
@@ -1048,19 +1084,90 @@
                             <button class="btn btn-primary" onclick="createBulkAdminDrop()" id="bulkCreateBtn" style="width: 100%; padding: 14px; font-size: 15px; font-weight: 700;">
                                 🎯 Drop the Coins
                             </button>
-                        </div>
 
-                        <!-- Manage Drops Section -->
-                        <div style="background: white; padding: 25px; border-radius: 12px; border: 2px solid #E0E0E0;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                                <h3 style="font-size: 20px; color: #333;">Manage Drops</h3>
-                                <button class="btn btn-info" onclick="loadAdminDrops()" style="padding: 10px 20px;">
-                                    Refresh List
+                            <!-- Success callout — populated by createBulkAdminDrop() with the array of coin_codes. -->
+                            <div id="bulkDropResultCallout" style="display:none; margin-top:18px; padding:16px; background:rgba(0,212,255,0.08); border:1px solid #00d4ff; border-radius:10px; color:#fff;"></div>
+                        </div>
+                        </div>
+                        <!-- /Drop sub-tab pane -->
+
+                        <!-- ============================================================
+                             SUB-TAB 2: BROWSE
+                             Searchable / filterable table of every coin.
+                             ============================================================ -->
+                        <div id="adminDropsSubTabBrowse" class="adminDropsSubTabPane" style="display:none;">
+                            <!-- Filter bar -->
+                            <div style="background:#0a0a0a; border:1px solid #222; border-radius:12px; padding:16px; margin-bottom:18px; display:grid; grid-template-columns: 2fr 1fr 1fr auto; gap:10px; align-items:end;">
+                                <div>
+                                    <label style="display:block; margin-bottom:6px; color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">Search</label>
+                                    <input type="text" id="browseSearchInput" placeholder="🔍 Coin code or title…" oninput="browseSearchDebounced()"
+                                           style="width:100%; padding:11px 14px; background:#000; border:1px solid #222; color:#fff; border-radius:8px; font-size:13px;">
+                                </div>
+                                <div>
+                                    <label style="display:block; margin-bottom:6px; color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">Currency</label>
+                                    <select id="browseCurrencyFilter" onchange="browseApplyFilters()"
+                                            style="width:100%; padding:11px; background:#000; border:1px solid #222; color:#fff; border-radius:8px; font-size:13px;">
+                                        <option value="all">All</option>
+                                        <option value="USD">USD</option>
+                                        <option value="CREDITS">CREDITS</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display:block; margin-bottom:6px; color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">Status</label>
+                                    <select id="browseStatusFilter" onchange="browseApplyFilters()"
+                                            style="width:100%; padding:11px; background:#000; border:1px solid #222; color:#fff; border-radius:8px; font-size:13px;">
+                                        <option value="all">All</option>
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
+                                        <option value="expired">Expired</option>
+                                        <option value="fully_claimed">Fully Claimed</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-info" onclick="loadBrowseCoins(true)" style="padding:11px 18px; font-size:13px;">
+                                    Refresh
                                 </button>
                             </div>
 
-                            <div id="adminDropsList"></div>
+                            <div id="browseCoinsStats" style="color:#888; font-size:12px; margin-bottom:10px;"></div>
+
+                            <div id="browseCoinsTable">
+                                <div style="text-align:center; padding:40px; color:#888;">Loading coins…</div>
+                            </div>
+
+                            <div style="text-align:center; margin-top:18px;">
+                                <button id="browseLoadMoreBtn" class="btn btn-secondary" onclick="loadBrowseCoins(false)" style="display:none; padding:12px 24px;">
+                                    Load 50 more
+                                </button>
+                            </div>
                         </div>
+                        <!-- /Browse sub-tab pane -->
+
+                        <!-- ============================================================
+                             SUB-TAB 3: AUDIT
+                             Mode A (default): dashboard tiles.
+                             Mode B: coin detail (entered via code lookup or Browse "View").
+                             ============================================================ -->
+                        <div id="adminDropsSubTabAudit" class="adminDropsSubTabPane" style="display:none;">
+                            <!-- Coin code lookup bar (always visible) -->
+                            <div style="background:#0a0a0a; border:1px solid #222; border-radius:12px; padding:16px; margin-bottom:18px; display:flex; gap:10px; align-items:end;">
+                                <div style="flex:1;">
+                                    <label style="display:block; margin-bottom:6px; color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">Look up a coin by code</label>
+                                    <input type="text" id="auditCoinCodeInput" placeholder="COIN-XXXX-XXXX-XXXX" onkeydown="if(event.key==='Enter')lookupCoinByCode()"
+                                           style="width:100%; padding:11px 14px; background:#000; border:1px solid #222; color:#fff; border-radius:8px; font-size:13px; font-family:Menlo,Monaco,monospace;">
+                                </div>
+                                <button class="btn btn-primary" onclick="lookupCoinByCode()" style="padding:11px 22px;">Look up</button>
+                                <button class="btn btn-secondary" onclick="showAuditDashboard()" style="padding:11px 22px;">📊 Dashboard</button>
+                            </div>
+
+                            <!-- Mode A: Dashboard tiles -->
+                            <div id="auditDashboardPane">
+                                <div style="text-align:center; padding:40px; color:#888;">Loading dashboard…</div>
+                            </div>
+
+                            <!-- Mode B: Coin detail view -->
+                            <div id="auditCoinDetailPane" style="display:none;"></div>
+                        </div>
+                        <!-- /Audit sub-tab pane -->
                     </div>
                 </div>
             </div>
@@ -4643,6 +4750,9 @@ Use this only when:
                 const expires  = document.getElementById('bulkExpiresAt').value;
                 const notif    = document.getElementById('bulkNotificationMessage').value.trim();
                 const notifRad = parseFloat(document.getElementById('bulkNotificationRadius').value || '5');
+                // Optional: video duration for server-side watch validation. Blank → instant-claim.
+                const vidDurRaw = document.getElementById('bulkVideoDuration')?.value;
+                const videoDurationSeconds = vidDurRaw ? parseInt(vidDurRaw) : null;
 
                 if (!title) { adminToast('Title is required', 'error'); return; }
                 if (count < 1 || count > 500) { adminToast('Count must be 1–500', 'error'); return; }
@@ -4731,16 +4841,82 @@ Use this only when:
                 progress.style.display = 'none';
 
                 if (error) {
+                    console.log('[admin-coins] bulk drop RPC error', error);
                     adminToast('Bulk drop failed: ' + error.message, 'error');
                     return;
                 }
 
+                // If admin set a video duration, apply it to the newly-created
+                // coins. We do this as a separate UPDATE (rather than passing
+                // a new RPC arg) so we don't depend on the RPC signature having
+                // that param yet — keeps the FE forward-compatible.
+                if (videoDurationSeconds != null && !isNaN(videoDurationSeconds) && Array.isArray(data.coin_codes) && data.coin_codes.length > 0) {
+                    const { error: upErr } = await supabaseClient
+                        .from('admin_drops')
+                        .update({ video_duration_seconds: videoDurationSeconds })
+                        .in('coin_code', data.coin_codes);
+                    if (upErr) {
+                        console.log('[admin-coins] video duration backfill error', upErr);
+                        adminToast('Coins created but video duration could not be set: ' + upErr.message, 'error', 6000);
+                    } else {
+                        console.log('[admin-coins] applied video duration', videoDurationSeconds, 'to', data.coin_codes.length, 'coins');
+                    }
+                }
+
                 adminToast(`✅ Dropped ${data.created_count} coins (snapped to roads)! Total: ${currency === 'USD' ? `$${(data.total_value / 100).toFixed(2)}` : `${data.total_value} credits`}`, 'success', 6500);
-                loadAdminDrops();
+
+                // Show generated coin codes in a callout (with copy-all). The RPC
+                // returns them in data.coin_codes (added in migration 20260516000010).
+                showBulkCoinCodesCallout(data.coin_codes || [], currency, data.total_value);
+
+                // Refresh Browse table if it's been loaded so the new coins appear.
+                if (typeof _browseCoinsLoaded !== 'undefined' && _browseCoinsLoaded) {
+                    loadBrowseCoins(true);
+                }
             } catch (err) {
                 console.error('Bulk drop error:', err);
                 adminToast('Unexpected error: ' + err.message, 'error');
             }
+        }
+
+        // Renders the post-bulk-drop callout showing generated coin codes + copy-all.
+        function showBulkCoinCodesCallout(codes, currency, totalValue) {
+            const box = document.getElementById('bulkDropResultCallout');
+            if (!box) return;
+            if (!Array.isArray(codes) || codes.length === 0) {
+                box.style.display = 'block';
+                box.innerHTML = `
+                    <div style="color:#FFD700; font-weight:700; margin-bottom:6px;">✅ Dropped ${currency === 'USD' ? `$${(totalValue/100).toFixed(2)}` : `${totalValue} credits`} worth of coins</div>
+                    <div style="color:#888; font-size:12px;">No coin codes were returned by the RPC. Open the Browse sub-tab to see them.</div>
+                `;
+                return;
+            }
+            const codeListHtml = codes.map(c => `<div style="padding:4px 0; font-family:Menlo,Monaco,monospace; font-size:12px; color:#00d4ff;">${esc(c)}</div>`).join('');
+            box.style.display = 'block';
+            box.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <strong style="color:#00d4ff; font-size:14px;">✅ ${codes.length} coin codes generated</strong>
+                    <button class="btn btn-secondary" onclick="copyCoinCodesToClipboard()" style="padding:6px 14px; font-size:12px;">📋 Copy all</button>
+                </div>
+                <div id="bulkDropCoinCodesList" style="max-height:200px; overflow-y:auto; background:#000; border:1px solid #111; border-radius:6px; padding:10px;">
+                    ${codeListHtml}
+                </div>
+            `;
+            // Stash the raw codes for the copy button (avoids re-querying DOM)
+            window._lastBulkCoinCodes = codes.slice();
+            console.log('[admin-coins] bulk drop produced codes:', codes);
+        }
+
+        function copyCoinCodesToClipboard() {
+            const codes = window._lastBulkCoinCodes || [];
+            if (codes.length === 0) { adminToast('Nothing to copy', 'error'); return; }
+            const text = codes.join('\n');
+            navigator.clipboard.writeText(text)
+                .then(() => adminToast(`Copied ${codes.length} coin codes`, 'success'))
+                .catch(err => {
+                    console.warn('[admin-coins] clipboard copy failed', err);
+                    adminToast('Copy failed — see console', 'error');
+                });
         }
 
         async function createAdminDrop() {
@@ -4759,6 +4935,9 @@ Use this only when:
                 const expiresAt = document.getElementById('dropExpiresAt').value;
                 const notificationMessage = document.getElementById('dropNotificationMessage').value.trim();
                 const notificationRadius = parseFloat(document.getElementById('dropNotificationRadius').value);
+                // Optional: video duration for server-side watch validation. Blank → instant-claim.
+                const videoDurRaw = document.getElementById('dropVideoDuration')?.value;
+                const videoDurationSeconds = videoDurRaw ? parseInt(videoDurRaw) : null;
 
                 if (!title) {
                     alert('Please enter a title');
@@ -4832,7 +5011,9 @@ Use this only when:
                     is_active: true,
                     views_count: 0,
                     media_url: mediaUrl,
-                    media_type: mediaType
+                    media_type: mediaType,
+                    // Server-side watch validation kicks in when this is set.
+                    video_duration_seconds: videoDurationSeconds,
                 };
 
                 // Call Edge Function to create drop and send notifications
@@ -4854,23 +5035,56 @@ Use this only when:
                 }
 
                 const result = await response.json();
-                console.log('📦 Drop created successfully:', result);
-                console.log('📬 Notifications sent:', result.notificationsSent);
-                console.log('📍 Drop ID:', result.drop?.id);
+                console.log('[admin-coins] single drop created:', result);
+                console.log('[admin-coins] notifications sent:', result.notificationsSent);
+                console.log('[admin-coins] drop id:', result.drop?.id);
 
-                // Always show notification count (even if 0)
-                let successMessage = 'Drop created successfully!';
                 const notifCount = result.notificationsSent || 0;
 
-                if (notifCount > 0) {
-                    successMessage += `\n\n✅ ${notifCount} notification(s) sent to nearby users.`;
-                } else if (notificationMessage) {
-                    successMessage += `\n\n⚠️ 0 notifications sent.\nPossible reasons:\n• No users with recent location data (within 4 hours)\n• No users within ${notificationRadius} mile radius\n• Users don't have push tokens`;
-                } else {
-                    successMessage += `\n\nℹ️ No notification message provided - no notifications sent.`;
+                // The edge function returns the drop row, but to be safe (and to
+                // pick up the DB-generated coin_code in case the edge function
+                // doesn't surface it), do an explicit SELECT.
+                let coinCode = result.drop?.coin_code || null;
+                const dropId = result.drop?.id;
+                if (dropId && !coinCode) {
+                    try {
+                        const { data: fetched, error: fetchErr } = await supabaseClient
+                            .from('admin_drops')
+                            .select('coin_code')
+                            .eq('id', dropId)
+                            .single();
+                        if (!fetchErr) coinCode = fetched?.coin_code || null;
+                        else console.log('[admin-coins] coin_code fetch error', fetchErr);
+                    } catch (e) {
+                        console.log('[admin-coins] coin_code fetch threw', e);
+                    }
                 }
 
-                alert(successMessage);
+                // If admin set a video duration, apply it via UPDATE. The edge
+                // function may not pass it through to the row, so we do this
+                // unconditionally — keeps FE forward-compatible with the function.
+                if (dropId && videoDurationSeconds != null && !isNaN(videoDurationSeconds)) {
+                    const { error: vidErr } = await supabaseClient
+                        .from('admin_drops')
+                        .update({ video_duration_seconds: videoDurationSeconds })
+                        .eq('id', dropId);
+                    if (vidErr) {
+                        console.log('[admin-coins] video duration backfill error', vidErr);
+                        adminToast('Coin created but video duration could not be set: ' + vidErr.message, 'error', 6000);
+                    } else {
+                        console.log('[admin-coins] applied video duration', videoDurationSeconds, 'to coin', dropId);
+                    }
+                }
+
+                // Surface the result in the inline callout (replaces the old alert()).
+                showSingleCoinResultCallout({
+                    coinCode,
+                    dropId,
+                    notifCount,
+                    notificationMessage,
+                    notificationRadius,
+                });
+                adminToast('✅ Coin dropped successfully!', 'success');
 
                 // Clear form (dropType field was removed in the redesign)
                 document.getElementById('dropTitle').value = '';
@@ -4884,6 +5098,8 @@ Use this only when:
                 document.getElementById('dropNotificationMessage').value = '';
                 document.getElementById('dropNotificationRadius').value = '5';
                 document.getElementById('dropMedia').value = '';
+                const vidDurEl = document.getElementById('dropVideoDuration');
+                if (vidDurEl) vidDurEl.value = '';
                 updateValueHint();
 
                 // Clear marker
@@ -4894,12 +5110,58 @@ Use this only when:
                 selectedDropLocation = null;
                 document.getElementById('dropLocationInfo').textContent = 'Click on the map to set drop location';
 
-                // Reload drops list
-                loadAdminDrops();
+                // Refresh Browse table if it's been loaded so the new coin appears.
+                if (typeof _browseCoinsLoaded !== 'undefined' && _browseCoinsLoaded) {
+                    loadBrowseCoins(true);
+                }
             } catch (error) {
-                console.error('Error creating admin drop:', error);
+                console.error('[admin-coins] error creating drop:', error);
                 alert('Failed to create drop: ' + error.message);
             }
+        }
+
+        // Inline success callout for the single-coin form. Shows coin_code in mono,
+        // notification info, and a link to open in the Audit tab.
+        function showSingleCoinResultCallout({ coinCode, dropId, notifCount, notificationMessage, notificationRadius }) {
+            const box = document.getElementById('singleDropResultCallout');
+            if (!box) return;
+            let notifLine = '';
+            if (notifCount > 0) {
+                notifLine = `<div style="color:#888; font-size:12px; margin-top:6px;">📬 Sent ${notifCount} push notification${notifCount === 1 ? '' : 's'}.</div>`;
+            } else if (notificationMessage) {
+                notifLine = `<div style="color:#FF9800; font-size:12px; margin-top:6px;">⚠️ 0 notifications sent (no users with recent location within ${notificationRadius} mi).</div>`;
+            }
+            const codeBlock = coinCode
+                ? `<div style="margin-top:10px; padding:10px 12px; background:#000; border:1px solid #111; border-radius:6px; font-family:Menlo,Monaco,monospace; font-size:14px; color:#00d4ff; display:flex; justify-content:space-between; align-items:center;">
+                       <span id="singleCoinCodeText">${esc(coinCode)}</span>
+                       <button class="btn btn-secondary" onclick="copySingleCoinCode()" style="padding:4px 10px; font-size:11px;">📋 Copy</button>
+                   </div>`
+                : `<div style="margin-top:10px; color:#888; font-size:12px;">Coin code not returned — view it in the Browse sub-tab.</div>`;
+            const viewBtn = dropId
+                ? `<button class="btn btn-secondary" onclick="openCoinDetail('${jsEsc(dropId)}')" style="margin-top:10px; padding:8px 16px; font-size:12px;">📊 View in Audit</button>`
+                : '';
+            box.style.display = 'block';
+            box.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <strong style="color:#00d4ff; font-size:14px;">✅ Coin dropped</strong>
+                    <button onclick="document.getElementById('singleDropResultCallout').style.display='none'" style="background:transparent; border:none; color:#888; cursor:pointer; font-size:16px;">×</button>
+                </div>
+                ${codeBlock}
+                ${notifLine}
+                ${viewBtn}
+            `;
+            window._lastSingleCoinCode = coinCode || '';
+        }
+
+        function copySingleCoinCode() {
+            const code = window._lastSingleCoinCode || '';
+            if (!code) { adminToast('Nothing to copy', 'error'); return; }
+            navigator.clipboard.writeText(code)
+                .then(() => adminToast('Coin code copied', 'success'))
+                .catch(err => {
+                    console.warn('[admin-coins] clipboard copy failed', err);
+                    adminToast('Copy failed — see console', 'error');
+                });
         }
 
         async function loadAdminDrops() {
@@ -4917,6 +5179,13 @@ Use this only when:
 
                 allAdminDrops = data || [];
                 renderAdminDropsList();
+
+                // The new Browse sub-tab maintains its own paginated cache.
+                // If the user has loaded it, refresh it too so any deletes /
+                // toggles done through the legacy bulk-group modal are reflected.
+                if (typeof _browseCoinsLoaded !== 'undefined' && _browseCoinsLoaded) {
+                    loadBrowseCoins(true);
+                }
             } catch (error) {
                 console.error('Error loading admin drops:', error);
                 alert('Failed to load drops: ' + error.message);
@@ -4952,6 +5221,16 @@ Use this only when:
 
         function renderAdminDropsList() {
             const container = document.getElementById('adminDropsList');
+            // The legacy Manage Drops table was retired in the sub-tab redesign
+            // (Browse sub-tab replaces it). The container element no longer
+            // exists in the DOM, but several existing handlers still call
+            // loadAdminDrops() → renderAdminDropsList() to refresh after a
+            // bulk delete. Bail safely instead of throwing.
+            if (!container) {
+                // Still keep the map markers in sync though.
+                updateDropMarkersOnMap?.();
+                return;
+            }
 
             if (allAdminDrops.length === 0) {
                 container.innerHTML = `
@@ -5611,6 +5890,599 @@ Use this only when:
 
         // ===== End Admin Drops Functions =====
 
+        // ============================================================
+        // ADMIN DROPS — SUB-TAB NAV (Drop / Browse / Audit)
+        // ============================================================
+        // Sub-tabs are pill-style and live INSIDE the existing admin-drops tab.
+        // The "Drop" pane keeps the existing single/bulk forms; Browse and
+        // Audit are new. Each tab lazy-loads its data on first activation.
+        let _currentAdminDropsSubTab = 'drop';
+
+        function setAdminDropsSubTab(name) {
+            _currentAdminDropsSubTab = name;
+            const panes = {
+                drop:   document.getElementById('adminDropsSubTabDrop'),
+                browse: document.getElementById('adminDropsSubTabBrowse'),
+                audit:  document.getElementById('adminDropsSubTabAudit'),
+            };
+            const btns = {
+                drop:   document.getElementById('adminDropsSubTabDropBtn'),
+                browse: document.getElementById('adminDropsSubTabBrowseBtn'),
+                audit:  document.getElementById('adminDropsSubTabAuditBtn'),
+            };
+            Object.keys(panes).forEach(k => {
+                if (panes[k]) panes[k].style.display = (k === name) ? 'block' : 'none';
+                if (btns[k]) {
+                    if (k === name) {
+                        btns[k].style.background = 'linear-gradient(135deg,#00d4ff 0%,#0099ff 100%)';
+                        btns[k].style.color = '#000';
+                    } else {
+                        btns[k].style.background = 'transparent';
+                        btns[k].style.color = '#888';
+                    }
+                }
+            });
+            // Lazy-load on first activation. Browse + Audit each manage their own
+            // "loaded" flag so re-clicking the sub-tab doesn't reload everything.
+            if (name === 'browse' && !_browseCoinsLoaded) {
+                loadBrowseCoins(true);
+            }
+            if (name === 'audit') {
+                // If we're not currently viewing a coin detail, refresh the dashboard.
+                const detailPane = document.getElementById('auditCoinDetailPane');
+                if (!detailPane || detailPane.style.display === 'none') {
+                    loadAuditDashboard();
+                }
+            }
+        }
+
+        // ============================================================
+        // BROWSE SUB-TAB
+        // ============================================================
+        // Loads admin_drops in pages of 50, applies client-side filters
+        // (currency, status, text search on coin_code/title), and renders a
+        // table with View / Deactivate / Delete actions per row.
+        const BROWSE_PAGE_SIZE = 50;
+        let _browseCoinsLoaded = false;
+        let _browseCoinsAll = [];           // accumulated rows across pages
+        let _browseCoinsOffset = 0;
+        let _browseCoinsExhausted = false;
+        let _browseCoinsLoading = false;
+        let _browseSearchTimer = null;
+
+        function browseSearchDebounced() {
+            clearTimeout(_browseSearchTimer);
+            _browseSearchTimer = setTimeout(browseApplyFilters, 200);
+        }
+
+        async function loadBrowseCoins(resetFirst) {
+            if (_browseCoinsLoading) return;
+            _browseCoinsLoading = true;
+            if (resetFirst) {
+                _browseCoinsAll = [];
+                _browseCoinsOffset = 0;
+                _browseCoinsExhausted = false;
+                document.getElementById('browseCoinsTable').innerHTML =
+                    '<div style="text-align:center; padding:40px; color:#888;">Loading coins…</div>';
+            }
+            try {
+                const from = _browseCoinsOffset;
+                const to = _browseCoinsOffset + BROWSE_PAGE_SIZE - 1;
+                console.log('[admin-coins] browse fetch range', from, to);
+                const { data, error } = await supabaseClient
+                    .from('admin_drops')
+                    .select('id, coin_code, title, reward_amount, value_currency, view_limit, views_count, is_active, expires_at, latitude, longitude, created_at, radius, video_duration_seconds')
+                    .order('created_at', { ascending: false })
+                    .range(from, to);
+                if (error) {
+                    console.log('[admin-coins] browse fetch error', error);
+                    adminToast('Failed to load coins: ' + error.message, 'error');
+                    return;
+                }
+                _browseCoinsAll = _browseCoinsAll.concat(data || []);
+                _browseCoinsOffset += (data || []).length;
+                if (!data || data.length < BROWSE_PAGE_SIZE) _browseCoinsExhausted = true;
+                _browseCoinsLoaded = true;
+                browseApplyFilters();
+            } catch (err) {
+                console.error('[admin-coins] browse load threw', err);
+                adminToast('Unexpected error loading coins', 'error');
+            } finally {
+                _browseCoinsLoading = false;
+            }
+        }
+
+        // Compute the live status of a coin row given the inactive / expired /
+        // fully-claimed precedence rules.
+        function computeCoinStatus(d) {
+            if (!d.is_active) return 'inactive';
+            if (d.expires_at && new Date(d.expires_at) < new Date()) return 'expired';
+            if (d.view_limit != null && d.views_count != null && d.views_count >= d.view_limit) return 'fully_claimed';
+            return 'active';
+        }
+
+        function browseApplyFilters() {
+            const q = (document.getElementById('browseSearchInput')?.value || '').trim().toLowerCase();
+            const curr = document.getElementById('browseCurrencyFilter')?.value || 'all';
+            const status = document.getElementById('browseStatusFilter')?.value || 'all';
+
+            const filtered = _browseCoinsAll.filter(d => {
+                if (q) {
+                    const hay = `${d.coin_code || ''} ${d.title || ''}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                }
+                if (curr !== 'all' && d.value_currency !== curr) return false;
+                if (status !== 'all' && computeCoinStatus(d) !== status) return false;
+                return true;
+            });
+
+            renderBrowseCoinsTable(filtered);
+
+            // Stats line: showing N of total loaded, exhausted-or-not hint.
+            const stats = document.getElementById('browseCoinsStats');
+            if (stats) {
+                stats.textContent =
+                    `Showing ${filtered.length} of ${_browseCoinsAll.length} loaded` +
+                    (_browseCoinsExhausted ? ' (all coins loaded)' : ' — more available');
+            }
+
+            // Load-more button visibility
+            const moreBtn = document.getElementById('browseLoadMoreBtn');
+            if (moreBtn) moreBtn.style.display = _browseCoinsExhausted ? 'none' : 'inline-block';
+        }
+
+        function renderBrowseCoinsTable(rows) {
+            const container = document.getElementById('browseCoinsTable');
+            if (!container) return;
+            if (rows.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align:center; padding:40px; color:#888;">
+                        <p style="font-size:16px; margin-bottom:8px;">No coins match the current filters.</p>
+                        <p style="font-size:13px;">Try clearing the search or status filter.</p>
+                    </div>
+                `;
+                return;
+            }
+            const html = `
+                <div style="overflow-x:auto; background:#0a0a0a; border:1px solid #222; border-radius:12px;">
+                    <table style="width:100%; border-collapse:collapse; color:#ddd;">
+                        <thead>
+                            <tr style="background:rgba(0,212,255,0.10); color:#00d4ff; text-transform:uppercase; font-size:11px; letter-spacing:0.05em;">
+                                <th style="padding:12px; text-align:left;">Coin Code</th>
+                                <th style="padding:12px; text-align:left;">Title</th>
+                                <th style="padding:12px; text-align:left;">Value</th>
+                                <th style="padding:12px; text-align:left;">Currency</th>
+                                <th style="padding:12px; text-align:left;">Created</th>
+                                <th style="padding:12px; text-align:left;">Status</th>
+                                <th style="padding:12px; text-align:left;">Claims</th>
+                                <th style="padding:12px; text-align:center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows.map(d => browseRowHtml(d)).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        function browseRowHtml(d) {
+            const status = computeCoinStatus(d);
+            const statusBadge = {
+                active:        { label: '● ACTIVE',        color: '#4CAF50', bg: 'rgba(76,175,80,0.15)' },
+                inactive:      { label: 'INACTIVE',        color: '#999',    bg: 'rgba(150,150,150,0.15)' },
+                expired:       { label: 'EXPIRED',         color: '#FF9800', bg: 'rgba(255,152,0,0.12)' },
+                fully_claimed: { label: '✓ FULLY CLAIMED', color: '#9C27B0', bg: 'rgba(156,39,176,0.15)' },
+            }[status];
+            const valueLabel = d.value_currency === 'USD'
+                ? `$${((d.reward_amount || 0) / 100).toFixed(2)}`
+                : `${(d.reward_amount || 0).toLocaleString()}`;
+            const createdLabel = d.created_at ? new Date(d.created_at).toLocaleString() : '—';
+            const claimsLabel = `${d.views_count || 0}${d.view_limit ? ` / ${d.view_limit}` : ' / ∞'}`;
+            return `
+                <tr style="border-bottom:1px solid #1a1a1a;" onmouseover="this.style.background='rgba(0,212,255,0.04)'" onmouseout="this.style.background='transparent'">
+                    <td style="padding:12px; font-family:Menlo,Monaco,monospace; font-size:12px; color:#00d4ff;">${esc(d.coin_code || '—')}</td>
+                    <td style="padding:12px;"><strong style="color:#fff;">${esc(d.title || '(untitled)')}</strong></td>
+                    <td style="padding:12px; color:#FFD700; font-weight:700;">${valueLabel}</td>
+                    <td style="padding:12px; color:#aaa;">${esc(d.value_currency || '—')}</td>
+                    <td style="padding:12px; font-size:12px; color:#888;">${createdLabel}</td>
+                    <td style="padding:12px;">
+                        <span style="color:${statusBadge.color}; background:${statusBadge.bg}; font-weight:700; font-size:11px; padding:4px 10px; border-radius:12px;">${statusBadge.label}</span>
+                    </td>
+                    <td style="padding:12px; color:#ddd;">${claimsLabel}</td>
+                    <td style="padding:12px; text-align:center;">
+                        <div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+                            <button class="btn btn-info" onclick="openCoinDetail('${jsEsc(d.id)}')" style="padding:6px 10px; font-size:11px;">View</button>
+                            <button class="btn ${d.is_active ? 'btn-warning' : 'btn-success'}" onclick="browseToggleCoinActive('${jsEsc(d.id)}', ${!d.is_active})" style="padding:6px 10px; font-size:11px;">${d.is_active ? 'Deactivate' : 'Activate'}</button>
+                            <button class="btn btn-danger" onclick="browseDeleteCoin('${jsEsc(d.id)}', '${jsEsc(d.coin_code || d.id)}')" style="padding:6px 10px; font-size:11px;">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        async function browseToggleCoinActive(coinId, makeActive) {
+            const { error } = await supabaseClient
+                .from('admin_drops')
+                .update({ is_active: makeActive })
+                .eq('id', coinId);
+            if (error) {
+                console.log('[admin-coins] toggle active error', error);
+                adminToast('Failed to update: ' + error.message, 'error');
+                return;
+            }
+            adminToast(`Coin ${makeActive ? 'activated' : 'deactivated'}`, 'success');
+            // Update local cache so the table reflects immediately, no full reload
+            const row = _browseCoinsAll.find(d => d.id === coinId);
+            if (row) row.is_active = makeActive;
+            browseApplyFilters();
+        }
+
+        async function browseDeleteCoin(coinId, label) {
+            const ok = await adminConfirm({
+                title: 'Delete this coin?',
+                message: `Permanently removes coin ${label} and its claim history.\n\nThis cannot be undone.`,
+                dangerLevel: 'destructive',
+                confirmLabel: 'Delete coin',
+            });
+            if (!ok) return;
+            const { error } = await supabaseClient.rpc('admin_bulk_delete_admin_drops', { p_drop_ids: [coinId] });
+            if (error) {
+                console.log('[admin-coins] delete coin error', error);
+                adminToast('Delete failed: ' + error.message, 'error');
+                return;
+            }
+            adminToast('Coin deleted', 'success');
+            _browseCoinsAll = _browseCoinsAll.filter(d => d.id !== coinId);
+            browseApplyFilters();
+        }
+
+        // ============================================================
+        // AUDIT SUB-TAB
+        // ============================================================
+        // Mode A: dashboard tiles (active count, value on map, claims today, etc).
+        // Mode B: coin detail (entered via "View" button or coin code lookup).
+
+        async function loadAuditDashboard() {
+            const pane = document.getElementById('auditDashboardPane');
+            const detailPane = document.getElementById('auditCoinDetailPane');
+            if (detailPane) detailPane.style.display = 'none';
+            if (!pane) return;
+            pane.style.display = 'block';
+            pane.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">Loading dashboard…</div>';
+
+            try {
+                const nowIso = new Date().toISOString();
+                const oneDayAgoIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+                // Active coins: is_active AND (expires_at IS NULL OR expires_at > NOW())
+                //              AND (view_limit IS NULL OR views_count < view_limit)
+                // Postgres `or` filter syntax: comma-separated list inside .or(...)
+                // PostgREST/Supabase doesn't easily support views_count < view_limit
+                // as a column-to-column comparison, so we fetch active+non-expired
+                // rows and apply the limit check client-side.
+                const { data: activeRows, error: actErr } = await supabaseClient
+                    .from('admin_drops')
+                    .select('id, reward_amount, value_currency, view_limit, views_count')
+                    .eq('is_active', true)
+                    .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
+                if (actErr) console.log('[admin-coins] dashboard active fetch error', actErr);
+
+                const stillClaimable = (activeRows || []).filter(d =>
+                    d.view_limit == null || (d.views_count || 0) < d.view_limit
+                );
+                const totalActive = stillClaimable.length;
+                const usdOnMap = stillClaimable
+                    .filter(d => d.value_currency === 'USD')
+                    .reduce((s, d) => s + (d.reward_amount || 0), 0);
+                const creditsOnMap = stillClaimable
+                    .filter(d => d.value_currency === 'CREDITS')
+                    .reduce((s, d) => s + (d.reward_amount || 0), 0);
+
+                // Claims today (24h window)
+                const { count: claimsToday, error: ctErr } = await supabaseClient
+                    .from('admin_drop_views')
+                    .select('id', { count: 'exact', head: true })
+                    .not('claimed_at', 'is', null)
+                    .gt('claimed_at', oneDayAgoIso);
+                if (ctErr) console.log('[admin-coins] dashboard claimsToday error', ctErr);
+
+                // Claims all-time
+                const { count: claimsAllTime, error: caErr } = await supabaseClient
+                    .from('admin_drop_views')
+                    .select('id', { count: 'exact', head: true })
+                    .not('claimed_at', 'is', null);
+                if (caErr) console.log('[admin-coins] dashboard claimsAllTime error', caErr);
+
+                // Top 5 claimants. We pull recent claims (cap 1000 to bound work)
+                // and group client-side, then join usernames. For larger datasets
+                // this should move to an RPC, but it's fine for current scale.
+                const { data: claimsRows, error: clErr } = await supabaseClient
+                    .from('admin_drop_views')
+                    .select('viewer_id')
+                    .not('claimed_at', 'is', null)
+                    .limit(2000);
+                if (clErr) console.log('[admin-coins] dashboard claims fetch error', clErr);
+
+                const claimCounts = {};
+                (claimsRows || []).forEach(r => {
+                    if (!r.viewer_id) return;
+                    claimCounts[r.viewer_id] = (claimCounts[r.viewer_id] || 0) + 1;
+                });
+                const topIds = Object.entries(claimCounts)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 5);
+
+                let topClaimants = [];
+                if (topIds.length > 0) {
+                    const { data: users } = await supabaseClient
+                        .from('users')
+                        .select('id, username')
+                        .in('id', topIds.map(([id]) => id));
+                    const usersById = new Map((users || []).map(u => [u.id, u]));
+                    topClaimants = topIds.map(([id, count]) => ({
+                        id,
+                        username: usersById.get(id)?.username || '(unknown)',
+                        count,
+                    }));
+                }
+
+                pane.innerHTML = renderAuditDashboardHtml({
+                    totalActive,
+                    usdOnMap,
+                    creditsOnMap,
+                    claimsToday: claimsToday || 0,
+                    claimsAllTime: claimsAllTime || 0,
+                    topClaimants,
+                });
+            } catch (err) {
+                console.error('[admin-coins] dashboard threw', err);
+                pane.innerHTML = `<div style="text-align:center; padding:40px; color:#FF4757;">Failed to load dashboard: ${esc(err.message || String(err))}</div>`;
+            }
+        }
+
+        function renderAuditDashboardHtml({ totalActive, usdOnMap, creditsOnMap, claimsToday, claimsAllTime, topClaimants }) {
+            const usdLabel = `$${(usdOnMap / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            const creditsLabel = creditsOnMap.toLocaleString();
+            const tile = (title, value, sub) => `
+                <div style="background:#0a0a0a; border:1px solid #222; border-radius:12px; padding:20px;">
+                    <div style="color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">${esc(title)}</div>
+                    <div style="color:#fff; font-size:28px; font-weight:700;">${value}</div>
+                    ${sub ? `<div style="color:#666; font-size:12px; margin-top:6px;">${sub}</div>` : ''}
+                </div>
+            `;
+            const topClaimantsHtml = topClaimants.length === 0
+                ? '<div style="color:#666; font-size:13px;">No claims yet.</div>'
+                : topClaimants.map((c, i) => `
+                    <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #1a1a1a;">
+                        <div style="color:#fff;">
+                            <span style="color:#00d4ff; font-weight:700; margin-right:8px;">#${i + 1}</span>
+                            ${esc(c.username)}
+                        </div>
+                        <div style="color:#FFD700; font-weight:700;">${c.count} claim${c.count === 1 ? '' : 's'}</div>
+                    </div>
+                `).join('');
+            return `
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:24px;">
+                    ${tile('Total coins active', totalActive.toLocaleString(), 'Still claimable right now')}
+                    ${tile('USD on the map',     `<span style="color:#FFD700;">${usdLabel}</span>`, 'Sum of active USD coins')}
+                    ${tile('Credits on the map', `<span style="color:#FFD700;">${creditsLabel}</span>`, 'Sum of active CREDITS coins')}
+                    ${tile('Claims today',      claimsToday.toLocaleString(),   'Last 24 hours')}
+                    ${tile('Claims all-time',   claimsAllTime.toLocaleString(), 'Across every coin ever')}
+                </div>
+                <div style="background:#0a0a0a; border:1px solid #222; border-radius:12px; padding:20px;">
+                    <h3 style="color:#00d4ff; font-size:14px; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:12px;">🏆 Top 5 Claimants</h3>
+                    ${topClaimantsHtml}
+                    <div style="color:#555; font-size:11px; margin-top:12px;">Based on the most recent 2,000 claims.</div>
+                </div>
+            `;
+        }
+
+        function showAuditDashboard() {
+            // Clear the lookup input so the dashboard view is "clean"
+            const inp = document.getElementById('auditCoinCodeInput');
+            if (inp) inp.value = '';
+            loadAuditDashboard();
+        }
+
+        // Look up by coin_code (the public-facing identifier on the coin sticker).
+        // Codes are stored uppercase ("COIN-XXXX-XXXX-XXXX") so we normalize
+        // the input to spare admins from caps-typing — but fall back to a
+        // case-insensitive ilike search if the exact match fails.
+        async function lookupCoinByCode() {
+            const raw = (document.getElementById('auditCoinCodeInput')?.value || '').trim();
+            if (!raw) { adminToast('Enter a coin code first', 'error'); return; }
+            const code = raw.toUpperCase();
+            console.log('[admin-coins] lookup by code', code);
+            let { data, error } = await supabaseClient
+                .from('admin_drops')
+                .select('id')
+                .eq('coin_code', code)
+                .maybeSingle();
+            if (error) {
+                console.log('[admin-coins] lookup error', error);
+                adminToast('Lookup failed: ' + error.message, 'error');
+                return;
+            }
+            if (!data) {
+                // Try a case-insensitive match in case the stored format differs
+                const fallback = await supabaseClient
+                    .from('admin_drops')
+                    .select('id')
+                    .ilike('coin_code', raw)
+                    .maybeSingle();
+                if (!fallback.error && fallback.data) data = fallback.data;
+            }
+            if (!data) {
+                adminToast(`No coin with code "${raw}"`, 'error');
+                return;
+            }
+            openCoinDetail(data.id);
+        }
+
+        // Open the coin detail view (also accessible from Browse → View). Switches
+        // to the Audit sub-tab if we're not already there.
+        async function openCoinDetail(coinId) {
+            // Make sure the Audit sub-tab is visible
+            if (_currentAdminDropsSubTab !== 'audit') {
+                setAdminDropsSubTab('audit');
+            }
+            const dashPane = document.getElementById('auditDashboardPane');
+            const detailPane = document.getElementById('auditCoinDetailPane');
+            if (dashPane) dashPane.style.display = 'none';
+            if (!detailPane) return;
+            detailPane.style.display = 'block';
+            detailPane.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">Loading coin…</div>';
+
+            try {
+                // Fetch coin + claim history in parallel.
+                const [coinRes, claimsRes] = await Promise.all([
+                    supabaseClient
+                        .from('admin_drops')
+                        .select('*')
+                        .eq('id', coinId)
+                        .single(),
+                    supabaseClient
+                        .from('admin_drop_views')
+                        .select('id, viewer_id, claimed_at, watch_progress_pct, watch_started_at')
+                        .eq('admin_drop_id', coinId)
+                        .order('claimed_at', { ascending: false, nullsFirst: false }),
+                ]);
+
+                if (coinRes.error) {
+                    console.log('[admin-coins] coin detail fetch error', coinRes.error);
+                    detailPane.innerHTML = `<div style="text-align:center; padding:40px; color:#FF4757;">Failed to load coin: ${esc(coinRes.error.message)}</div>`;
+                    return;
+                }
+                const coin = coinRes.data;
+                const claims = claimsRes.data || [];
+                if (claimsRes.error) console.log('[admin-coins] claims fetch error', claimsRes.error);
+
+                // Sidecar fetches: usernames + ledger txn codes
+                const viewerIds = [...new Set(claims.map(c => c.viewer_id).filter(Boolean))];
+                const claimIds = claims.map(c => c.id);
+
+                const [usersRes, ledgerRes] = await Promise.all([
+                    viewerIds.length > 0
+                        ? supabaseClient.from('users').select('id, username, email').in('id', viewerIds)
+                        : Promise.resolve({ data: [], error: null }),
+                    claimIds.length > 0
+                        ? supabaseClient.from('user_credit_ledger')
+                            .select('source_id, transaction_code, amount, currency')
+                            .eq('source', 'drop_claim')
+                            .in('source_id', claimIds)
+                        : Promise.resolve({ data: [], error: null }),
+                ]);
+                if (usersRes.error) console.log('[admin-coins] users fetch error', usersRes.error);
+                if (ledgerRes.error) console.log('[admin-coins] ledger fetch error', ledgerRes.error);
+
+                const usersById = new Map((usersRes.data || []).map(u => [u.id, u]));
+                const ledgerByClaimId = new Map((ledgerRes.data || []).map(l => [l.source_id, l]));
+
+                detailPane.innerHTML = renderCoinDetailHtml(coin, claims, usersById, ledgerByClaimId);
+            } catch (err) {
+                console.error('[admin-coins] coin detail threw', err);
+                detailPane.innerHTML = `<div style="text-align:center; padding:40px; color:#FF4757;">Unexpected error: ${esc(err.message || String(err))}</div>`;
+            }
+        }
+
+        function renderCoinDetailHtml(coin, claims, usersById, ledgerByClaimId) {
+            const status = computeCoinStatus(coin);
+            const statusBadge = {
+                active:        { label: '● ACTIVE',        color: '#4CAF50', bg: 'rgba(76,175,80,0.15)' },
+                inactive:      { label: 'INACTIVE',        color: '#999',    bg: 'rgba(150,150,150,0.15)' },
+                expired:       { label: 'EXPIRED',         color: '#FF9800', bg: 'rgba(255,152,0,0.12)' },
+                fully_claimed: { label: '✓ FULLY CLAIMED', color: '#9C27B0', bg: 'rgba(156,39,176,0.15)' },
+            }[status];
+            const valueLabel = coin.value_currency === 'USD'
+                ? `$${((coin.reward_amount || 0) / 100).toFixed(2)}`
+                : `${(coin.reward_amount || 0).toLocaleString()} credits`;
+            const claimsTotal = claims.filter(c => c.claimed_at).length;
+            const claimsAttempted = claims.length;
+            const claimsRowsHtml = claims.length === 0
+                ? '<tr><td colspan="5" style="padding:24px; text-align:center; color:#666;">No claim attempts yet.</td></tr>'
+                : claims.map(c => {
+                    const u = usersById.get(c.viewer_id);
+                    const ledger = ledgerByClaimId.get(c.id);
+                    const claimedLabel = c.claimed_at
+                        ? new Date(c.claimed_at).toLocaleString()
+                        : '<span style="color:#666;">— (incomplete)</span>';
+                    const progress = c.watch_progress_pct != null
+                        ? `${Number(c.watch_progress_pct).toFixed(0)}%`
+                        : '—';
+                    const txCell = ledger
+                        ? `<span style="font-family:Menlo,Monaco,monospace; font-size:11px; color:#00d4ff;">${esc(ledger.transaction_code)}</span>`
+                        : '<span style="color:#666;">—</span>';
+                    return `
+                        <tr style="border-bottom:1px solid #1a1a1a;">
+                            <td style="padding:10px 12px;">
+                                <strong style="color:#fff;">${esc(u?.username || '(unknown)')}</strong>
+                                ${u?.email ? `<div style="color:#666; font-size:11px;">${esc(u.email)}</div>` : ''}
+                            </td>
+                            <td style="padding:10px 12px; color:#aaa; font-size:12px;">${claimedLabel}</td>
+                            <td style="padding:10px 12px; color:#fff;">${progress}</td>
+                            <td style="padding:10px 12px;">${txCell}</td>
+                            <td style="padding:10px 12px; text-align:center;">
+                                <button class="btn btn-secondary" onclick="reverseClaimTodo('${jsEsc(c.id)}')" style="padding:5px 10px; font-size:11px;" title="Not yet implemented">Reverse (TODO)</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+            const videoDurLine = coin.video_duration_seconds != null
+                ? `<div style="color:#888; font-size:12px;">⏱️ Video duration: <strong style="color:#fff;">${esc(coin.video_duration_seconds)}s</strong> (server-side watch validation enabled)</div>`
+                : `<div style="color:#888; font-size:12px;">⏱️ Video duration: <strong style="color:#fff;">not set</strong> (instant-claim coin)</div>`;
+
+            return `
+                <div style="background:#0a0a0a; border:1px solid #222; border-radius:12px; padding:24px; margin-bottom:18px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px;">
+                        <div>
+                            <div style="font-family:Menlo,Monaco,monospace; font-size:20px; color:#00d4ff; margin-bottom:6px;">${esc(coin.coin_code || coin.id)}</div>
+                            <h3 style="color:#fff; font-size:18px; margin-bottom:6px;">${esc(coin.title || '(untitled)')}</h3>
+                            ${coin.description ? `<div style="color:#888; font-size:13px; margin-bottom:10px;">${esc(coin.description)}</div>` : ''}
+                            <div style="font-size:24px; color:#FFD700; font-weight:700; margin-bottom:8px;">${valueLabel}</div>
+                            <div style="color:#888; font-size:12px;">📍 ${coin.latitude?.toFixed(5)}, ${coin.longitude?.toFixed(5)} · geofence ${coin.radius}m</div>
+                            ${videoDurLine}
+                        </div>
+                        <div style="text-align:right;">
+                            <span style="color:${statusBadge.color}; background:${statusBadge.bg}; font-weight:700; font-size:12px; padding:5px 14px; border-radius:14px; display:inline-block; margin-bottom:8px;">${statusBadge.label}</span>
+                            <div style="color:#888; font-size:12px;">Created ${coin.created_at ? new Date(coin.created_at).toLocaleString() : '—'}</div>
+                            ${coin.expires_at ? `<div style="color:#888; font-size:12px;">Expires ${new Date(coin.expires_at).toLocaleString()}</div>` : '<div style="color:#888; font-size:12px;">No expiry</div>'}
+                            <div style="color:#888; font-size:12px;">Claims: <strong style="color:#fff;">${coin.views_count || 0}</strong>${coin.view_limit ? ` / ${coin.view_limit}` : ' (unlimited)'}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background:#0a0a0a; border:1px solid #222; border-radius:12px; padding:20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                        <h3 style="color:#00d4ff; font-size:14px; text-transform:uppercase; letter-spacing:0.05em;">📜 Claim History</h3>
+                        <div style="color:#888; font-size:12px;">${claimsTotal} successful · ${claimsAttempted} attempted</div>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%; border-collapse:collapse; color:#ddd;">
+                            <thead>
+                                <tr style="background:rgba(0,212,255,0.08); color:#00d4ff; text-transform:uppercase; font-size:10px; letter-spacing:0.05em;">
+                                    <th style="padding:10px 12px; text-align:left;">Username</th>
+                                    <th style="padding:10px 12px; text-align:left;">Claimed At</th>
+                                    <th style="padding:10px 12px; text-align:left;">Watch %</th>
+                                    <th style="padding:10px 12px; text-align:left;">Transaction Code</th>
+                                    <th style="padding:10px 12px; text-align:center;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>${claimsRowsHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Placeholder — wire up to a real "reverse claim" RPC later.
+        function reverseClaimTodo(claimId) {
+            console.log('[admin-coins] reverseClaimTodo for claim', claimId);
+            adminToast('Reverse-claim flow is not yet implemented.', 'info');
+        }
+
         function showTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -5618,11 +6490,18 @@ Use this only when:
             event.target.classList.add('active');
             document.getElementById(tab + '-tab').classList.add('active');
 
-            // Initialize map when admin drops tab is shown
+            // Initialize map when admin drops tab is shown. Default sub-tab is
+            // "Drop" — the existing single-coin map needs to init for that pane.
+            // Browse + Audit lazy-load on first sub-tab activation.
             if (tab === 'admin-drops') {
                 setTimeout(() => {
                     initializeDropMap();
-                    loadAdminDrops();
+                    // Show the Drop sub-tab by default, but only if no sub-tab is
+                    // already active (preserves state if admin tab-switches away
+                    // and back).
+                    if (!_currentAdminDropsSubTab || _currentAdminDropsSubTab === 'drop') {
+                        setAdminDropsSubTab('drop');
+                    }
                 }, 100);
             }
         }
