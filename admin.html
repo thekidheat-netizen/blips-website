@@ -950,13 +950,14 @@
                             </div>
                             <div style="margin-bottom: 16px;">
                                 <label style="display: block; margin-bottom: 6px; color: #888; font-size: 12px;">📹 Media (video preferred)</label>
-                                <input type="file" id="dropMedia" accept="video/*,image/*" style="width: 100%; padding: 10px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 13px;">
+                                <input type="file" id="dropMedia" accept="video/*,image/*" onchange="autoExtractDuration('dropMedia', 'dropVideoDuration', 'dropVideoDurationLabel')" style="width: 100%; padding: 10px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 13px;">
                                 <div id="mediaUploadProgress" style="display: none; margin-top: 8px; padding: 8px; background: rgba(0,212,255,0.1); border-radius: 6px; color: #00d4ff; font-size: 12px;"></div>
-                            </div>
-                            <div style="margin-bottom: 16px;">
-                                <label style="display: block; margin-bottom: 6px; color: #888; font-size: 12px;">⏱️ Video duration (seconds)</label>
-                                <input type="number" id="dropVideoDuration" min="1" step="1" placeholder="e.g. 15" style="width: 100%; padding: 11px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 14px;">
-                                <small style="display:block; margin-top:4px; color:#666; font-size:11px;">Required for server-side watch validation. Leave blank for instant-claim coins.</small>
+                                <!-- Auto-detected video duration. Hidden number input keeps the rest
+                                     of the form code working unchanged; the visible label tells the
+                                     admin what was extracted. For images / no upload, label stays
+                                     blank and value stays empty (instant-claim coin). -->
+                                <input type="hidden" id="dropVideoDuration" value="">
+                                <div id="dropVideoDurationLabel" style="display: none; margin-top: 8px; padding: 8px 10px; background: rgba(0,212,255,0.08); border: 1px solid rgba(0,212,255,0.25); border-radius: 6px; color: #00d4ff; font-size: 12px;"></div>
                             </div>
 
                             <h3 style="margin: 22px 0 14px; color: #00d4ff; font-size: 16px;">📬 Step 4: Push notification (optional)</h3>
@@ -1049,13 +1050,11 @@
                             </div>
                             <div style="margin-bottom: 14px;">
                                 <label style="display: block; margin-bottom: 6px; color: #888; font-size: 12px;">📹 Shared media (video preferred)</label>
-                                <input type="file" id="bulkMedia" accept="video/*,image/*" style="width: 100%; padding: 10px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 13px;">
+                                <input type="file" id="bulkMedia" accept="video/*,image/*" onchange="autoExtractDuration('bulkMedia', 'bulkVideoDuration', 'bulkVideoDurationLabel')" style="width: 100%; padding: 10px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 13px;">
                                 <div id="bulkMediaProgress" style="display: none; margin-top: 8px; padding: 8px; background: rgba(0,212,255,0.1); border-radius: 6px; color: #00d4ff; font-size: 12px;"></div>
-                            </div>
-                            <div style="margin-bottom: 14px;">
-                                <label style="display: block; margin-bottom: 6px; color: #888; font-size: 12px;">⏱️ Video duration (seconds)</label>
-                                <input type="number" id="bulkVideoDuration" min="1" step="1" placeholder="e.g. 15" style="width: 100%; padding: 11px; border: 1px solid #222; border-radius: 6px; background: #000; color: #fff; font-size: 14px;">
-                                <small style="display:block; margin-top:4px; color:#666; font-size:11px;">Required for server-side watch validation. Leave blank for instant-claim coins.</small>
+                                <!-- Auto-detected duration — same pattern as single-coin form. -->
+                                <input type="hidden" id="bulkVideoDuration" value="">
+                                <div id="bulkVideoDurationLabel" style="display: none; margin-top: 8px; padding: 8px 10px; background: rgba(0,212,255,0.08); border: 1px solid rgba(0,212,255,0.25); border-radius: 6px; color: #00d4ff; font-size: 12px;"></div>
                             </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
                                 <div>
@@ -5893,6 +5892,76 @@ Use this only when:
         // ============================================================
         // ADMIN DROPS — SUB-TAB NAV (Drop / Browse / Audit)
         // ============================================================
+        // ────────────────────────────────────────────────────────────────────
+        // Auto-extract video duration when the admin picks a media file.
+        //
+        // Why this exists: the original UX asked the admin to manually type
+        // the video's duration in seconds. That was both annoying and a
+        // footgun — typing a duration without uploading a video would
+        // make the server-side watch-validation gate reject all claims for
+        // the coin ("watched 0.1 of 5 seconds"). Now the admin just picks
+        // the file; we read its metadata and stash the duration in a hidden
+        // input that the rest of the form code already reads.
+        //
+        // Implementation: HTML5 <video> element loads metadata for any
+        // browser-playable video. For images (or upload failure), we clear
+        // the duration so the coin becomes an instant-claim.
+        // ────────────────────────────────────────────────────────────────────
+        function autoExtractDuration(fileInputId, hiddenDurationId, labelId) {
+            const fileInput = document.getElementById(fileInputId);
+            const hidden    = document.getElementById(hiddenDurationId);
+            const label     = document.getElementById(labelId);
+            if (!fileInput || !hidden || !label) return;
+
+            // Reset previous state on every new selection.
+            hidden.value = '';
+            label.style.display = 'none';
+            label.textContent = '';
+
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) return;
+
+            // Images / non-video MIME types → no duration, instant-claim.
+            if (!file.type || !file.type.startsWith('video/')) {
+                label.style.display = 'block';
+                label.textContent = `📸 Image upload — instant-claim coin (no watch required).`;
+                return;
+            }
+
+            // Use a hidden video element to load metadata. We pass the file
+            // through an object URL so we don't have to upload first.
+            const url   = URL.createObjectURL(file);
+            const probe = document.createElement('video');
+            probe.preload = 'metadata';
+            probe.muted   = true;       // satisfy autoplay rules on some browsers
+            probe.src     = url;
+
+            // Tell the admin we're working on it (videos can take a beat).
+            label.style.display = 'block';
+            label.textContent = '⏳ Reading video duration…';
+
+            probe.onloadedmetadata = () => {
+                const seconds = probe.duration;
+                URL.revokeObjectURL(url);
+                if (!isFinite(seconds) || seconds <= 0) {
+                    label.textContent = '⚠️ Could not read duration from this video file. Re-encode and try again.';
+                    return;
+                }
+                // Round up so the server's 90% threshold definitely fires
+                // after the user actually watches to the end.
+                const rounded = Math.max(1, Math.ceil(seconds));
+                hidden.value  = String(rounded);
+                label.textContent = `🎬 Detected: ${seconds.toFixed(1)}s — users must watch the full video to claim.`;
+                console.log('[admin-coins] auto-detected video duration:', rounded, 's for', fileInputId);
+            };
+
+            probe.onerror = () => {
+                URL.revokeObjectURL(url);
+                label.textContent = '⚠️ Could not read this video. Make sure it\'s an H.264 MP4 / MOV that the browser can preview.';
+                console.warn('[admin-coins] video metadata load failed for', fileInputId);
+            };
+        }
+
         // Sub-tabs are pill-style and live INSIDE the existing admin-drops tab.
         // The "Drop" pane keeps the existing single/bulk forms; Browse and
         // Audit are new. Each tab lazy-loads its data on first activation.
