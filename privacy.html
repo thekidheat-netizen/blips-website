@@ -56,58 +56,99 @@
 
     <div class="legal-content">
         <h1>Privacy Policy</h1>
-        <p class="date">Last updated: January 20, 2025</p>
+        <p class="date">Last updated: May 15, 2026</p>
+
+        <p>Blips Digital ("Blips," "we," "us," or "our") operates the Blips mobile application (the "App"). This Privacy Policy explains what information we collect, how we use it, and the choices you have.</p>
 
         <h2>1. Information We Collect</h2>
-        <p>When you use Blips, we collect the following information:</p>
+        <p>We collect the following categories of information when you use Blips:</p>
         <ul>
-            <li><strong>Account Information:</strong> Email address, username, and profile information</li>
-            <li><strong>Content:</strong> Videos, photos, and other content you create or share</li>
-            <li><strong>Location Data:</strong> Approximate location to show you nearby content</li>
-            <li><strong>Usage Data:</strong> How you interact with the app and its features</li>
-            <li><strong>Device Information:</strong> Device type, operating system, and unique identifiers</li>
+            <li><strong>Account information:</strong> Email address, username, display name, password (hashed), and date of birth (used for age verification only).</li>
+            <li><strong>Profile information:</strong> Profile photo, bio, city/location, and any other profile fields you choose to fill in.</li>
+            <li><strong>Phone number (optional):</strong> If you choose to add and verify your phone number, we store it so other users who have your number in their contacts can find you on Blips. We never display your phone number publicly. See Section 5 for SMS-specific terms.</li>
+            <li><strong>Content:</strong> Videos, photos, comments, replies, and other content you create or upload — including the geographic coordinates of where each "blip" was dropped.</li>
+            <li><strong>Location data:</strong> Your device's GPS location, used to determine which nearby content to show you and to verify proximity when you view a location-based blip. Location is collected only while the app is in use; we do not track location in the background.</li>
+            <li><strong>Contacts (optional):</strong> If you grant permission, we read the phone numbers in your device contacts solely to find which of those people are already on Blips. Phone numbers are hashed (SHA-256) on your device before being sent to our servers; we never receive or store the plaintext contact list, contact names, or contact emails.</li>
+            <li><strong>Usage data:</strong> How you interact with the app — which screens you visit, which blips you view, which actions you take. Used for product improvement and abuse prevention.</li>
+            <li><strong>Device information:</strong> Device model, operating system version, app version, language, and a push notification token if you grant notification permission.</li>
+            <li><strong>Crash and diagnostic data:</strong> Stack traces and device state if the app crashes, sent to our error reporting service.</li>
         </ul>
 
         <h2>2. How We Use Your Information</h2>
-        <p>We use your information to:</p>
+        <p>We use the information we collect to:</p>
         <ul>
-            <li>Provide and improve our services</li>
-            <li>Show you relevant content based on your location</li>
-            <li>Enable communication with other users</li>
-            <li>Protect against fraud and abuse</li>
-            <li>Comply with legal obligations</li>
+            <li>Provide, operate, and maintain the App and its features.</li>
+            <li>Show you content near your current location, including blips, announcements, and admin drops.</li>
+            <li>Let you communicate with other users via comments, video replies, and direct messages.</li>
+            <li>Verify your identity when you add a phone number, so friends can find you and you can find them.</li>
+            <li>Send you push notifications about activity relevant to your account (likes, comments, friend requests, nearby drops). You control this in your device's notification settings.</li>
+            <li>Protect against spam, fraud, abuse, and violations of our Terms of Service.</li>
+            <li>Improve the App through aggregated, non-identifying analytics.</li>
+            <li>Comply with legal obligations and respond to lawful requests.</li>
         </ul>
 
         <h2>3. Information Sharing</h2>
-        <p>We do not sell your personal information. We may share information:</p>
+        <p><strong>We do not sell your personal information.</strong> We share information only in the following limited situations:</p>
         <ul>
-            <li>With other users as part of the app's functionality</li>
-            <li>With service providers who help us operate the app</li>
-            <li>When required by law or to protect rights and safety</li>
-            <li>In connection with a business transaction (merger, sale, etc.)</li>
+            <li><strong>With other Blips users:</strong> Your username, display name, profile photo, bio, public blips, and other public profile elements are visible to other users of the App. Private blips and friends-only blips are visible only to the audiences you choose. Your phone number and email are never publicly displayed.</li>
+            <li><strong>With service providers we use to operate the App:</strong> We share necessary data with the third-party processors listed in Section 4 below. They are contractually limited to using your data only to provide their service to us.</li>
+            <li><strong>For legal reasons:</strong> If required by valid legal process (subpoena, court order) or to protect the safety of users or the public.</li>
+            <li><strong>In a business transaction:</strong> If Blips Digital is merged, acquired, or sells assets, your information may be transferred as part of that transaction. You will be notified.</li>
         </ul>
 
-        <h2>4. Your Choices</h2>
-        <p>You can:</p>
+        <h2>4. Third-Party Services We Use</h2>
+        <p>We rely on the following service providers to operate Blips. Each handles only the data needed to perform its function:</p>
         <ul>
-            <li>Update your account information in the app settings</li>
-            <li>Control who can see your content</li>
-            <li>Delete your account at any time</li>
-            <li>Opt out of location-based features</li>
+            <li><strong>Supabase</strong> — database, authentication, file storage, push notifications, and real-time messaging infrastructure.</li>
+            <li><strong>Twilio</strong> — sends SMS verification codes when you add a phone number.</li>
+            <li><strong>Google Maps Platform</strong> — map rendering, geocoding (turning coordinates into city names), and place autocomplete (city suggestions).</li>
+            <li><strong>Apple Push Notification service / Expo</strong> — delivery of push notifications to your device.</li>
+            <li><strong>Sentry</strong> — crash reporting and error monitoring.</li>
+            <li><strong>Apple Sign-In</strong> — if you choose to sign in with Apple, Apple shares only the information you authorize.</li>
+            <li><strong>Vercel</strong> — hosts this website.</li>
         </ul>
 
-        <h2>5. Data Security</h2>
-        <p>We implement security measures to protect your information, including encryption and secure servers. However, no method of transmission over the internet is 100% secure.</p>
+        <h2>5. SMS / Text Messaging Terms</h2>
+        <p>If you choose to add your phone number to your Blips account, we use Twilio to send you a one-time verification code via SMS. By entering your phone number and tapping "Send Code" in the App, you expressly consent to receive that SMS.</p>
+        <ul>
+            <li><strong>Message frequency:</strong> One verification SMS per add/change request. You may receive a small number of additional security-related messages (e.g., when changing your number).</li>
+            <li><strong>No marketing SMS:</strong> We do not use SMS for marketing, promotions, or any purpose other than account verification and security.</li>
+            <li><strong>Cost:</strong> Message and data rates may apply, depending on your mobile carrier plan. Blips does not charge you for these messages.</li>
+            <li><strong>Help & opt-out:</strong> You can stop receiving SMS at any time by removing your phone number in App Settings → Phone Number, or by replying STOP to any SMS we send. For help, email <strong>support@blipsdigital.com</strong>.</li>
+            <li><strong>Carriers:</strong> AT&T, T-Mobile, Verizon, and other US carriers are not liable for delayed or undelivered messages.</li>
+        </ul>
 
-        <h2>6. Children's Privacy</h2>
-        <p>Blips is not intended for users under 13 years of age. We do not knowingly collect information from children under 13.</p>
+        <h2>6. Your Choices and Rights</h2>
+        <ul>
+            <li><strong>Update or correct:</strong> Edit your profile, location, and account information any time in App Settings.</li>
+            <li><strong>Visibility:</strong> Make your profile private or your blips friends-only / private from the privacy controls in the App.</li>
+            <li><strong>Revoke permissions:</strong> Turn off Location, Contacts, Camera, Microphone, Photos, and Notifications at any time in your device's iOS Settings → Blips.</li>
+            <li><strong>Remove your phone number:</strong> In App Settings → Phone Number, you can remove it at any time. Once removed, your number will no longer be discoverable by friends through contact matching.</li>
+            <li><strong>Delete your account:</strong> App Settings → Account Actions → Delete Account. Your account is soft-deleted immediately — your content and profile become invisible to other users in the App right away. We retain a minimal record (account ID and deletion timestamp) for moderation review for a reasonable period before final deletion.</li>
+            <li><strong>Access or export:</strong> Email <strong>privacy@blipsdigital.com</strong> with the email associated with your account to request a copy of your data.</li>
+        </ul>
 
-        <h2>7. Changes to This Policy</h2>
-        <p>We may update this Privacy Policy from time to time. We will notify you of significant changes through the app.</p>
+        <h2>7. Data Retention</h2>
+        <p>We retain your information for as long as your account is active. After you delete your account, your data is hidden from other users immediately and is permanently removed from active systems within a reasonable period, except where we are required to retain it for legal, security, or fraud-prevention purposes.</p>
 
-        <h2>8. Contact Us</h2>
-        <p>If you have questions about this Privacy Policy, please contact us at:</p>
-        <p><strong>Email:</strong> privacy@blipsdigital.com</p>
+        <h2>8. Data Security</h2>
+        <p>We implement industry-standard security measures including TLS encryption in transit, encrypted backups, and database row-level security policies that restrict who can read each piece of data. Phone numbers used for friend matching are hashed locally on your device before transmission. No system is 100% secure; we encourage you to use a strong, unique password and to enable two-factor authentication on your email account.</p>
+
+        <h2>9. Children's Privacy</h2>
+        <p>Blips is not intended for users under 13 years of age, and we do not knowingly collect personal information from children under 13. We use an age-verification step at signup to enforce this. If you believe a child under 13 has created an account, please email <strong>privacy@blipsdigital.com</strong> and we will delete the account.</p>
+
+        <h2>10. International Users</h2>
+        <p>Blips is operated from the United States. If you access the App from outside the US, you understand that your information will be transferred to and processed in the US, where data protection laws may differ from those in your country.</p>
+
+        <h2>11. Changes to This Policy</h2>
+        <p>We may update this Privacy Policy from time to time. The "Last updated" date at the top reflects the most recent revision. For material changes, we will notify you in the App or by email. Continued use of the App after a change becomes effective constitutes acceptance of the updated policy.</p>
+
+        <h2>12. Contact Us</h2>
+        <p>For privacy-related questions or requests:</p>
+        <p>
+            <strong>Email:</strong> privacy@blipsdigital.com<br>
+            <strong>Support:</strong> support@blipsdigital.com
+        </p>
     </div>
 
     <footer>
