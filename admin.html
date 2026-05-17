@@ -869,6 +869,10 @@
                                     style="padding:9px 18px; border:none; border-radius:7px; background:transparent; color:#888; font-weight:600; font-size:13px; cursor:pointer;">
                                 🔍 Browse
                             </button>
+                            <button class="adminDropsSubTab" id="adminDropsSubTabBatchesBtn" onclick="setAdminDropsSubTab('batches')"
+                                    style="padding:9px 18px; border:none; border-radius:7px; background:transparent; color:#888; font-weight:600; font-size:13px; cursor:pointer;">
+                                📦 Batches
+                            </button>
                             <button class="adminDropsSubTab" id="adminDropsSubTabAuditBtn" onclick="setAdminDropsSubTab('audit')"
                                     style="padding:9px 18px; border:none; border-radius:7px; background:transparent; color:#888; font-weight:600; font-size:13px; cursor:pointer;">
                                 📊 Audit
@@ -1155,6 +1159,33 @@
                             </div>
                         </div>
                         <!-- /Browse sub-tab pane -->
+
+                        <!-- ============================================================
+                             SUB-TAB 2.5: BATCHES
+                             Card-per-bulk-drop view. Each card shows aggregate stats
+                             (count, total value, location, time) for one bulk drop, with
+                             a "Delete All" button that wipes every coin in the batch.
+                             Backed by admin_list_drop_batches() + admin_delete_drops_batch()
+                             RPCs (migration 20260516000015). Singleton drops (not part of
+                             any bulk operation) are intentionally NOT shown here — they
+                             live in the Browse sub-tab.
+                             ============================================================ -->
+                        <div id="adminDropsSubTabBatches" class="adminDropsSubTabPane" style="display:none;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+                                <div>
+                                    <div style="color:#fff; font-size:16px; font-weight:700;">Bulk drop batches</div>
+                                    <div style="color:#888; font-size:12px; margin-top:4px;">Each card is one bulk drop. Delete-all removes every coin in that drop.</div>
+                                </div>
+                                <button class="btn btn-info" onclick="loadDropBatches()" style="padding:11px 18px; font-size:13px;">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                            <div id="dropBatchesStats" style="color:#888; font-size:12px; margin-bottom:14px;"></div>
+                            <div id="dropBatchesList">
+                                <div style="text-align:center; padding:40px; color:#888;">Loading batches…</div>
+                            </div>
+                        </div>
+                        <!-- /Batches sub-tab pane -->
 
                         <!-- ============================================================
                              SUB-TAB 3: AUDIT
@@ -5025,7 +5056,9 @@ Use this only when:
 
                 // Show generated coin codes in a callout (with copy-all). The RPC
                 // returns them in data.coin_codes (added in migration 20260516000010).
-                showBulkCoinCodesCallout(data.coin_codes || [], currency, data.total_value);
+                // batch_id added in migration 20260516000015 — surfaces the new
+                // bulk batch in the callout with a one-click jump to Batches.
+                showBulkCoinCodesCallout(data.coin_codes || [], currency, data.total_value, data.batch_id);
 
                 // Refresh Browse table if it's been loaded so the new coins appear.
                 if (typeof _browseCoinsLoaded !== 'undefined' && _browseCoinsLoaded) {
@@ -5038,24 +5071,36 @@ Use this only when:
         }
 
         // Renders the post-bulk-drop callout showing generated coin codes + copy-all.
-        function showBulkCoinCodesCallout(codes, currency, totalValue) {
+        // batchId is the UUID returned by bulk_insert_admin_drops_at_points() in
+        // migration 20260516000015. Surfaces a "Manage batch" link that jumps
+        // straight to the new Batches sub-tab where the admin can delete-all
+        // if they want.
+        function showBulkCoinCodesCallout(codes, currency, totalValue, batchId) {
             const box = document.getElementById('bulkDropResultCallout');
             if (!box) return;
+            const batchLink = batchId
+                ? `<button class="btn btn-info" onclick="setAdminDropsSubTab('batches')" style="padding:8px 16px; font-size:12px;">📦 Manage this batch →</button>`
+                : '';
             if (!Array.isArray(codes) || codes.length === 0) {
                 box.style.display = 'block';
                 box.innerHTML = `
                     <div style="color:#FFD700; font-weight:700; margin-bottom:6px;">✅ Dropped ${currency === 'USD' ? `$${(totalValue/100).toFixed(2)}` : `${totalValue} credits`} worth of coins</div>
                     <div style="color:#888; font-size:12px;">No coin codes were returned by the RPC. Open the Browse sub-tab to see them.</div>
+                    ${batchLink ? `<div style="margin-top:10px;">${batchLink}</div>` : ''}
                 `;
                 return;
             }
             const codeListHtml = codes.map(c => `<div style="padding:4px 0; font-family:Menlo,Monaco,monospace; font-size:12px; color:#00d4ff;">${esc(c)}</div>`).join('');
             box.style.display = 'block';
             box.innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; flex-wrap:wrap;">
                     <strong style="color:#00d4ff; font-size:14px;">✅ ${codes.length} coin codes generated</strong>
-                    <button class="btn btn-secondary" onclick="copyCoinCodesToClipboard()" style="padding:6px 14px; font-size:12px;">📋 Copy all</button>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        ${batchLink}
+                        <button class="btn btn-secondary" onclick="copyCoinCodesToClipboard()" style="padding:6px 14px; font-size:12px;">📋 Copy all</button>
+                    </div>
                 </div>
+                ${batchId ? `<div style="font-family:Menlo,Monaco,monospace; font-size:11px; color:#666; margin-bottom:8px;">batch: ${esc(batchId)}</div>` : ''}
                 <div id="bulkDropCoinCodesList" style="max-height:200px; overflow-y:auto; background:#000; border:1px solid #111; border-radius:6px; padding:10px;">
                     ${codeListHtml}
                 </div>
@@ -6129,14 +6174,16 @@ Use this only when:
         function setAdminDropsSubTab(name) {
             _currentAdminDropsSubTab = name;
             const panes = {
-                drop:   document.getElementById('adminDropsSubTabDrop'),
-                browse: document.getElementById('adminDropsSubTabBrowse'),
-                audit:  document.getElementById('adminDropsSubTabAudit'),
+                drop:    document.getElementById('adminDropsSubTabDrop'),
+                browse:  document.getElementById('adminDropsSubTabBrowse'),
+                batches: document.getElementById('adminDropsSubTabBatches'),
+                audit:   document.getElementById('adminDropsSubTabAudit'),
             };
             const btns = {
-                drop:   document.getElementById('adminDropsSubTabDropBtn'),
-                browse: document.getElementById('adminDropsSubTabBrowseBtn'),
-                audit:  document.getElementById('adminDropsSubTabAuditBtn'),
+                drop:    document.getElementById('adminDropsSubTabDropBtn'),
+                browse:  document.getElementById('adminDropsSubTabBrowseBtn'),
+                batches: document.getElementById('adminDropsSubTabBatchesBtn'),
+                audit:   document.getElementById('adminDropsSubTabAuditBtn'),
             };
             Object.keys(panes).forEach(k => {
                 if (panes[k]) panes[k].style.display = (k === name) ? 'block' : 'none';
@@ -6150,10 +6197,16 @@ Use this only when:
                     }
                 }
             });
-            // Lazy-load on first activation. Browse + Audit each manage their own
-            // "loaded" flag so re-clicking the sub-tab doesn't reload everything.
+            // Lazy-load on first activation. Browse / Batches / Audit each manage
+            // their own "loaded" flag so re-clicking the sub-tab doesn't reload
+            // everything every time.
             if (name === 'browse' && !_browseCoinsLoaded) {
                 loadBrowseCoins(true);
+            }
+            if (name === 'batches') {
+                // Always refresh on entry — admins likely click into Batches
+                // because they JUST did a bulk drop and want to see it.
+                loadDropBatches();
             }
             if (name === 'audit') {
                 // If we're not currently viewing a coin detail, refresh the dashboard.
@@ -6162,6 +6215,104 @@ Use this only when:
                     loadAuditDashboard();
                 }
             }
+        }
+
+        // ============================================================
+        // BATCHES SUB-TAB — one card per bulk drop, with Delete All
+        // ============================================================
+        async function loadDropBatches() {
+            const listEl  = document.getElementById('dropBatchesList');
+            const statsEl = document.getElementById('dropBatchesStats');
+            if (!listEl) return;
+            listEl.innerHTML = `<div style="text-align:center; padding:40px; color:#888;">Loading batches…</div>`;
+            statsEl.textContent = '';
+
+            const { data, error } = await supabaseClient.rpc('admin_list_drop_batches');
+            if (error) {
+                listEl.innerHTML = `<div style="padding:20px; color:#f55; background:#1a0000; border:1px solid #500; border-radius:8px;">Failed to load batches: ${esc(error.message)}</div>`;
+                return;
+            }
+            const batches = data || [];
+            if (batches.length === 0) {
+                listEl.innerHTML = `
+                    <div style="text-align:center; padding:60px 20px; color:#888; background:#0a0a0a; border:1px dashed #333; border-radius:12px;">
+                        <div style="font-size:38px; margin-bottom:12px;">📦</div>
+                        <div style="font-size:15px; color:#ccc; margin-bottom:6px;">No bulk drops yet</div>
+                        <div style="font-size:12px;">Use the Drop sub-tab → "🎯 Bulk Drop in a City" to create one.</div>
+                    </div>`;
+                return;
+            }
+
+            const totalCoins  = batches.reduce((s, b) => s + Number(b.coin_count || 0), 0);
+            const totalActive = batches.reduce((s, b) => s + Number(b.active_count || 0), 0);
+            statsEl.textContent = `${batches.length} batch${batches.length === 1 ? '' : 'es'} · ${totalCoins} coins total (${totalActive} still active)`;
+
+            listEl.innerHTML = batches.map(b => {
+                const fmtValue = b.value_currency === 'USD'
+                    ? `$${(Number(b.total_value) / 100).toFixed(2)}`
+                    : `${Number(b.total_value).toLocaleString()} credits`;
+                const center = (b.center_lat != null && b.center_lng != null)
+                    ? `<a href="https://www.google.com/maps?q=${b.center_lat},${b.center_lng}" target="_blank" rel="noopener" style="color:#4FC3F7; text-decoration:none;">📍 ${Number(b.center_lat).toFixed(4)}, ${Number(b.center_lng).toFixed(4)}</a>`
+                    : '<span style="color:#666;">no location</span>';
+                return `
+                    <div style="background:#0a0a0a; border:1px solid #222; border-radius:12px; padding:20px; margin-bottom:14px;">
+                        <div style="display:flex; justify-content:space-between; align-items:start; gap:16px; margin-bottom:14px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="color:#fff; font-size:17px; font-weight:700; margin-bottom:4px;">${esc(b.title || '(no title)')}</div>
+                                <div style="color:#888; font-size:12px;">${esc(b.description || '')}</div>
+                                <div style="color:#666; font-size:11px; margin-top:8px; font-family:monospace;">batch: ${esc(b.batch_id)}</div>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0;">
+                                <button class="btn btn-danger" onclick="deleteDropBatch('${jsEsc(b.batch_id)}', ${Number(b.coin_count)})" style="padding:9px 16px; font-size:12px; white-space:nowrap;">
+                                    🗑️ Delete All
+                                </button>
+                            </div>
+                        </div>
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:12px; padding-top:14px; border-top:1px solid #1a1a1a;">
+                            <div>
+                                <div style="color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">Coins</div>
+                                <div style="color:#fff; font-size:18px; font-weight:700;">${Number(b.coin_count)}</div>
+                                <div style="color:#666; font-size:11px;">${Number(b.active_count)} active · ${Number(b.claimed_count)} claimed</div>
+                            </div>
+                            <div>
+                                <div style="color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">Total value</div>
+                                <div style="color:#FFD700; font-size:18px; font-weight:700;">${fmtValue}</div>
+                                <div style="color:#666; font-size:11px;">${esc(b.value_currency || '?')}</div>
+                            </div>
+                            <div>
+                                <div style="color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">Created</div>
+                                <div style="color:#ddd; font-size:13px;">${new Date(b.created_at).toLocaleString()}</div>
+                                <div style="color:#666; font-size:11px;">by ${esc(b.created_by_username || '?')}</div>
+                            </div>
+                            <div>
+                                <div style="color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">Center</div>
+                                <div style="font-size:13px;">${center}</div>
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        async function deleteDropBatch(batchId, coinCount) {
+            // Confirmation modal so we don't blow away a batch by mis-click.
+            const confirmed = await adminConfirm({
+                title: 'Delete entire bulk drop?',
+                message: `This will permanently delete <strong>${coinCount} coin${coinCount === 1 ? '' : 's'}</strong> from this batch. Users who already claimed coins from it keep their rewards (ledger entries are untouched), but unclaimed coins disappear from the map immediately.<br><br>This cannot be undone.`,
+                dangerLevel: 'high',
+                confirmLabel: `Delete ${coinCount} coin${coinCount === 1 ? '' : 's'}`,
+            });
+            if (!confirmed) return;
+
+            const { data, error } = await supabaseClient.rpc('admin_delete_drops_batch', { p_batch_id: batchId });
+            if (error) {
+                adminToast('Failed to delete batch: ' + error.message, 'error');
+                return;
+            }
+            adminToast(`Deleted ${data?.deleted_count || 0} coins from batch.`, 'success');
+            loadDropBatches();
+            // Also refresh the Browse cache so deleted coins aren't shown there
+            // if the admin clicks back over to it.
+            _browseCoinsLoaded = false;
         }
 
         // ============================================================
