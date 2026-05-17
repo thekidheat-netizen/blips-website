@@ -1292,6 +1292,45 @@
         }
 
         // ==================================================================
+        // ACTIVITY / TIME-AGO HELPERS
+        // ==================================================================
+        // formatRelative(iso) -> "5m ago" / "3h ago" / "2d ago" / "never"
+        // activityBadge(iso, opts) -> colored chip with 🟢/🟡/🔵 dot based on
+        //   how recently the timestamp occurred. Tuned for "is this user
+        //   actually around right now" — green within 5min (app open + GPS
+        //   pinging), yellow within an hour (recent session), blue within
+        //   24h (active today), dim otherwise.
+        function formatRelative(iso) {
+            if (!iso) return 'never';
+            const ms = Date.now() - new Date(iso).getTime();
+            if (ms < 0) return 'just now';
+            const s = Math.floor(ms / 1000);
+            if (s < 60)  return `${s}s ago`;
+            const m = Math.floor(s / 60);
+            if (m < 60)  return `${m}m ago`;
+            const h = Math.floor(m / 60);
+            if (h < 24)  return `${h}h ago`;
+            const d = Math.floor(h / 24);
+            if (d < 30)  return `${d}d ago`;
+            const mo = Math.floor(d / 30);
+            if (mo < 12) return `${mo}mo ago`;
+            return `${Math.floor(d / 365)}y ago`;
+        }
+        function activityBadge(iso) {
+            if (!iso) {
+                return `<span style="color:#666; font-size:12px;">never</span>`;
+            }
+            const min = (Date.now() - new Date(iso).getTime()) / 60000;
+            let color, dot;
+            if (min < 5)        { color = '#4CAF50'; dot = '🟢'; }   // Live now
+            else if (min < 60)  { color = '#FFC107'; dot = '🟡'; }   // Recent
+            else if (min < 1440){ color = '#03A9F4'; dot = '🔵'; }   // Today
+            else if (min < 10080){ color = '#9E9E9E'; dot = '⚪'; }  // This week
+            else                { color = '#555';    dot = '·';  }   // Stale
+            return `<span style="color:${color}; font-size:12px; white-space:nowrap;" title="${new Date(iso).toLocaleString()}">${dot} ${formatRelative(iso)}</span>`;
+        }
+
+        // ==================================================================
         // MODAL UTILITIES — replace native prompt() / confirm()
         // ==================================================================
         // The native dialogs are tiny, ugly, and don't let admins see context
@@ -1891,6 +1930,7 @@
                             <th>Username</th>
                             <th>Email</th>
                             <th>Status</th>
+                            <th>Last Active</th>
                             <th>Created</th>
                             <th>Actions</th>
                         </tr>
@@ -1920,6 +1960,7 @@
                                             : '<span class="badge" style="background: #4CAF50; color: white;">ACTIVE</span>')
                                     }
                                 </td>
+                                <td>${activityBadge(user.last_location_update)}</td>
                                 <td>${new Date(user.created_at).toLocaleDateString()}</td>
                                 <td>
                                     <button class="btn btn-info" onclick="openUserDetail('${user.id}')">View</button>
@@ -2055,6 +2096,18 @@
                 .order('created_at', { ascending: false })
                 .limit(20);
 
+            // Get auth metadata via the admin-only RPC (migration
+            // 20260516000014). last_sign_in_at lives in auth.users which
+            // PostgREST can't read directly. Falls back to null silently
+            // if the RPC isn't available yet.
+            let authMeta = null;
+            try {
+                const { data: am } = await supabaseClient.rpc('admin_get_user_auth_meta', { p_user_id: userId });
+                authMeta = am || null;
+            } catch (e) {
+                console.warn('admin_get_user_auth_meta unavailable:', e);
+            }
+
             const html = `
                 <div class="user-detail-header">
                     ${user.avatar_url
@@ -2075,6 +2128,53 @@
                                 Their content stays in the DB for moderation but is hidden from the app.
                             </div>
                         ` : ''}
+                    </div>
+                </div>
+
+                <!-- Activity panel — at-a-glance signal of whether this user
+                     is actually around. Sourced from public.users (location
+                     ping) + auth.users (login). The location field updates
+                     every few seconds while the app is open with GPS perms,
+                     so it's the most "live" signal we have. -->
+                <div class="action-section" style="background: linear-gradient(135deg, #1a1a1a 0%, #222 100%); padding: 16px 18px; border-radius: 10px; margin: 12px 0 18px 0; border: 1px solid #2a2a2a;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #888;">📡 Activity</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px;">
+                        <div>
+                            <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Last seen (location)</div>
+                            <div style="font-size: 16px;">${activityBadge(user.last_location_update)}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Last login</div>
+                            <div style="font-size: 16px;">${activityBadge(authMeta?.last_sign_in_at)}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Account age</div>
+                            <div style="font-size: 14px; color: #ddd;">
+                                ${formatRelative(user.created_at).replace(' ago', '')} old
+                                <div style="font-size: 11px; color: #666;">signed up ${new Date(user.created_at).toLocaleDateString()}</div>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Last known location</div>
+                            ${user.last_known_lat && user.last_known_lon ? `
+                                <div style="font-size: 13px; color: #ddd;">
+                                    <a href="https://www.google.com/maps?q=${user.last_known_lat},${user.last_known_lon}" target="_blank" rel="noopener" style="color: #4FC3F7; text-decoration: none;">
+                                        📍 ${user.last_known_lat.toFixed(4)}, ${user.last_known_lon.toFixed(4)}
+                                    </a>
+                                    <div style="font-size: 11px; color: #666;">tap to open in Maps</div>
+                                </div>
+                            ` : `<div style="font-size: 13px; color: #666;">no location pinged</div>`}
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Email verified</div>
+                            <div style="font-size: 14px; color: ${authMeta?.email_confirmed_at ? '#4CAF50' : '#FFC107'};">
+                                ${authMeta?.email_confirmed_at ? '✓ ' + formatRelative(authMeta.email_confirmed_at) : '✗ not verified'}
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Auth provider</div>
+                            <div style="font-size: 14px; color: #ddd;">${esc(authMeta?.provider || 'email')}</div>
+                        </div>
                     </div>
                 </div>
 
