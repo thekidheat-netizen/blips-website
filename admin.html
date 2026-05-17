@@ -725,11 +725,26 @@
                         <h2 style="margin-bottom: 20px;">User Management</h2>
                         <!-- Status filter: lets admin focus on Active / Banned / Deleted users.
                              "All" includes soft-deleted accounts so admins can see everyone for moderation. -->
-                        <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center;">
                             <button class="btn btn-primary" id="userFilterAll" onclick="setUserFilter('all')">All</button>
                             <button class="btn btn-secondary" id="userFilterActive" onclick="setUserFilter('active')">Active</button>
                             <button class="btn btn-secondary" id="userFilterBanned" onclick="setUserFilter('banned')">Banned only</button>
                             <button class="btn btn-secondary" id="userFilterDeleted" onclick="setUserFilter('deleted')">Soft-deleted</button>
+                            <!-- Sort dropdown — client-side resort over whatever's loaded.
+                                 NULL last_location_update / last_sign_in_at values always sink
+                                 to the bottom regardless of direction so the top of the list
+                                 stays signal-rich. -->
+                            <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                                <label for="userSortSelect" style="color: #888; font-size: 13px;">Sort by:</label>
+                                <select id="userSortSelect" onchange="setUserSort(this.value)" style="background: #1a1a1a; color: #fff; border: 1px solid #333; padding: 8px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;">
+                                    <option value="created_desc">Newest signups</option>
+                                    <option value="created_asc">Oldest signups</option>
+                                    <option value="active_desc">Most recently active</option>
+                                    <option value="active_asc">Least recently active</option>
+                                    <option value="name_asc">Username A→Z</option>
+                                    <option value="name_desc">Username Z→A</option>
+                                </select>
+                            </div>
                         </div>
                         <div id="usersTable"></div>
                     </div>
@@ -1232,6 +1247,11 @@
 
         let allUsers = [];
         let currentUserFilter = 'all'; // 'all' | 'active' | 'banned' | 'deleted'
+        // Sort mode for the user list. Client-side sort over the loaded set
+        // (allUsers). Default 'created_desc' preserves the historical behavior
+        // (newest signups first). Changed via the dropdown next to the filter
+        // buttons.
+        let currentUserSort = 'created_desc';
         let currentAdminId = null;
 
         // Pagination state — separate cursor per list. We use cursor-based
@@ -1872,8 +1892,8 @@
                 state.cursor = users[users.length - 1].created_at;
             }
 
-            // Honor whatever status filter is currently active.
-            displayUsers(applyUserFilter(allUsers));
+            // Honor whatever status filter + sort is currently active.
+            displayUsers(applyUserSort(applyUserFilter(allUsers)));
         }
 
         async function loadMoreUsers() {
@@ -1914,6 +1934,50 @@
             });
             // Re-run search with whatever's in the box (keeps query + filter in sync)
             searchUsers();
+        }
+
+        // Sort the user list. Pure client-side over allUsers.
+        // NULL timestamps always sort LAST regardless of asc/desc so the top
+        // of the list is always meaningful (e.g. "most recently active" never
+        // surfaces users who've never opened the app).
+        function setUserSort(mode) {
+            currentUserSort = mode;
+            // The dropdown's own onchange already set its value, but if this
+            // is called programmatically we keep the UI in sync.
+            const sel = document.getElementById('userSortSelect');
+            if (sel && sel.value !== mode) sel.value = mode;
+            searchUsers();
+        }
+
+        function applyUserSort(users) {
+            // Helpers: NULL-safe timestamp/string comparators.
+            const tsAsc  = (a, b, key) => {
+                const av = a[key] ? new Date(a[key]).getTime() : null;
+                const bv = b[key] ? new Date(b[key]).getTime() : null;
+                if (av === null && bv === null) return 0;
+                if (av === null) return 1;   // nulls last
+                if (bv === null) return -1;
+                return av - bv;
+            };
+            const tsDesc = (a, b, key) => -tsAsc(a, b, key) || (a[key] ? 0 : 1) - (b[key] ? 0 : 1);
+            const nameAsc = (a, b) => {
+                const ka = (a.username || a.deleted_username || a.email || '').toLowerCase();
+                const kb = (b.username || b.deleted_username || b.email || '').toLowerCase();
+                return ka.localeCompare(kb);
+            };
+
+            const sorted = users.slice(); // don't mutate the source
+            switch (currentUserSort) {
+                case 'created_asc':   sorted.sort((a, b) => tsAsc(a, b, 'created_at'));            break;
+                case 'active_desc':   sorted.sort((a, b) => tsDesc(a, b, 'last_location_update')); break;
+                case 'active_asc':    sorted.sort((a, b) => tsAsc(a, b, 'last_location_update'));  break;
+                case 'login_desc':    sorted.sort((a, b) => tsDesc(a, b, 'last_sign_in_at'));      break;
+                case 'name_asc':      sorted.sort(nameAsc);                                       break;
+                case 'name_desc':     sorted.sort((a, b) => -nameAsc(a, b));                       break;
+                case 'created_desc':
+                default:              sorted.sort((a, b) => tsDesc(a, b, 'created_at'));           break;
+            }
+            return sorted;
         }
 
         function displayUsers(users) {
@@ -2002,7 +2066,7 @@
             const filtered = applyUserFilter(allUsers);
 
             if (!query) {
-                displayUsers(filtered);
+                displayUsers(applyUserSort(filtered));
                 return;
             }
 
@@ -2015,22 +2079,17 @@
                 user.id?.toLowerCase().includes(query)
             );
 
-            // Sort alphabetically when searching. The default user list (no
-            // search) stays in created_at-desc order so newest signups stay
-            // up top — but as soon as you're hunting for a specific person,
-            // alphabetical is what the brain expects.
-            matches.sort((a, b) => {
-                const ka = (a.username || a.deleted_username || a.email || '').toLowerCase();
-                const kb = (b.username || b.deleted_username || b.email || '').toLowerCase();
-                return ka.localeCompare(kb);
-            });
-
-            displayUsers(matches);
+            // Honor the explicit sort selection when searching too. (Earlier
+            // versions hard-forced alphabetical here, but that overrides the
+            // admin's chosen sort — e.g. searching "yahoo" while sorted by
+            // "Most recently active" should still show the most recent ones
+            // first, not A→Z.)
+            displayUsers(applyUserSort(matches));
         }
 
         function clearSearch() {
             document.getElementById('userSearch').value = '';
-            displayUsers(applyUserFilter(allUsers));
+            displayUsers(applyUserSort(applyUserFilter(allUsers)));
         }
 
         async function openUserDetail(userId) {
