@@ -873,6 +873,10 @@
                                     style="padding:9px 18px; border:none; border-radius:7px; background:transparent; color:#888; font-weight:600; font-size:13px; cursor:pointer;">
                                 📦 Batches
                             </button>
+                            <button class="adminDropsSubTab" id="adminDropsSubTabMapBtn" onclick="setAdminDropsSubTab('map')"
+                                    style="padding:9px 18px; border:none; border-radius:7px; background:transparent; color:#888; font-weight:600; font-size:13px; cursor:pointer;">
+                                🗺️ Map
+                            </button>
                             <button class="adminDropsSubTab" id="adminDropsSubTabAuditBtn" onclick="setAdminDropsSubTab('audit')"
                                     style="padding:9px 18px; border:none; border-radius:7px; background:transparent; color:#888; font-weight:600; font-size:13px; cursor:pointer;">
                                 📊 Audit
@@ -1198,6 +1202,67 @@
                             </div>
                         </div>
                         <!-- /Batches sub-tab pane -->
+
+                        <!-- ============================================================
+                             SUB-TAB 2.7: MAP
+                             Renders every coin as a clickable marker on a Google Map.
+                             Click any marker → InfoWindow with details + edit / toggle
+                             active / delete buttons. Edit jumps into the Audit sub-tab's
+                             coin detail (which already has the full editing surface +
+                             claim history).
+                             ============================================================ -->
+                        <div id="adminDropsSubTabMap" class="adminDropsSubTabPane" style="display:none;">
+                            <!-- Filter bar -->
+                            <div style="background:#0a0a0a; border:1px solid #222; border-radius:12px; padding:14px; margin-bottom:14px; display:grid; grid-template-columns: 1fr 1fr auto; gap:10px; align-items:end;">
+                                <div>
+                                    <label style="display:block; margin-bottom:6px; color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">Currency</label>
+                                    <select id="mapCurrencyFilter" onchange="loadMapView()"
+                                            style="width:100%; padding:11px; background:#000; border:1px solid #222; color:#fff; border-radius:8px; font-size:13px;">
+                                        <option value="all">All</option>
+                                        <option value="USD">USD</option>
+                                        <option value="CREDITS">CREDITS</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display:block; margin-bottom:6px; color:#888; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">Status</label>
+                                    <select id="mapStatusFilter" onchange="loadMapView()"
+                                            style="width:100%; padding:11px; background:#000; border:1px solid #222; color:#fff; border-radius:8px; font-size:13px;">
+                                        <option value="active">Active only</option>
+                                        <option value="all">All (incl. inactive)</option>
+                                        <option value="inactive">Inactive only</option>
+                                        <option value="fully_claimed">Fully Claimed</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-info" onclick="loadMapView()" style="padding:11px 18px; font-size:13px;">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+
+                            <div id="mapViewStats" style="color:#888; font-size:12px; margin-bottom:10px;"></div>
+
+                            <!-- The map itself. Sized to give a generous view; admins
+                                 can scroll the page if they want more screen. -->
+                            <div id="adminDropsMapContainer" style="width:100%; height:600px; border-radius:12px; overflow:hidden; border:1px solid #222; background:#0a0a0a;">
+                                <div style="display:flex; align-items:center; justify-content:center; height:100%; color:#888;">Loading map…</div>
+                            </div>
+
+                            <!-- Legend -->
+                            <div style="display:flex; gap:18px; margin-top:14px; flex-wrap:wrap; color:#aaa; font-size:12px;">
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#4CAF50;"></span> Active
+                                </div>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#9E9E9E;"></span> Inactive
+                                </div>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#FF9800;"></span> Expired
+                                </div>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#9C27B0;"></span> Fully Claimed
+                                </div>
+                            </div>
+                        </div>
+                        <!-- /Map sub-tab pane -->
 
                         <!-- ============================================================
                              SUB-TAB 3: AUDIT
@@ -6189,12 +6254,14 @@ Use this only when:
                 drop:    document.getElementById('adminDropsSubTabDrop'),
                 browse:  document.getElementById('adminDropsSubTabBrowse'),
                 batches: document.getElementById('adminDropsSubTabBatches'),
+                map:     document.getElementById('adminDropsSubTabMap'),
                 audit:   document.getElementById('adminDropsSubTabAudit'),
             };
             const btns = {
                 drop:    document.getElementById('adminDropsSubTabDropBtn'),
                 browse:  document.getElementById('adminDropsSubTabBrowseBtn'),
                 batches: document.getElementById('adminDropsSubTabBatchesBtn'),
+                map:     document.getElementById('adminDropsSubTabMapBtn'),
                 audit:   document.getElementById('adminDropsSubTabAuditBtn'),
             };
             Object.keys(panes).forEach(k => {
@@ -6219,6 +6286,12 @@ Use this only when:
                 // Always refresh on entry — admins likely click into Batches
                 // because they JUST did a bulk drop and want to see it.
                 loadDropBatches();
+            }
+            if (name === 'map') {
+                // Always refresh on entry so the markers reflect current
+                // state (other admins may have toggled/deleted coins
+                // since this admin's last visit).
+                loadMapView();
             }
             if (name === 'audit') {
                 // If we're not currently viewing a coin detail, refresh the dashboard.
@@ -6546,6 +6619,219 @@ Use this only when:
             // Also refresh the Browse cache so deleted coins aren't shown there
             // if the admin clicks back over to it.
             _browseCoinsLoaded = false;
+        }
+
+        // ============================================================
+        // MAP SUB-TAB — show every coin as a marker on a Google Map
+        // ============================================================
+        // Markers colored by status. Click → InfoWindow with details +
+        // edit (jumps to Audit detail) / toggle active / delete buttons.
+        // Auto-fits bounds on load so all markers are visible.
+        let _adminMapInstance = null;
+        let _adminMapMarkers = [];          // keep refs so we can clear on reload
+        let _adminMapInfoWindow = null;     // shared singleton — click another marker, the open one closes
+
+        async function loadMapView() {
+            const container = document.getElementById('adminDropsMapContainer');
+            const statsEl = document.getElementById('mapViewStats');
+            if (!container) return;
+
+            // Clear previous markers (if any) before re-fetching.
+            for (const m of _adminMapMarkers) m.setMap(null);
+            _adminMapMarkers = [];
+            if (_adminMapInfoWindow) _adminMapInfoWindow.close();
+
+            statsEl.textContent = 'Loading coins…';
+
+            // Build query based on filters.
+            const currencyFilter = document.getElementById('mapCurrencyFilter')?.value || 'all';
+            const statusFilter = document.getElementById('mapStatusFilter')?.value || 'active';
+
+            let query = supabaseClient
+                .from('admin_drops')
+                .select('id, coin_code, title, latitude, longitude, reward_amount, value_currency, view_limit, views_count, is_active, expires_at, radius, created_at')
+                .order('created_at', { ascending: false })
+                // Cap at a reasonable number — if you have >2000 active coins
+                // on the map at once, performance starts to suffer without
+                // marker clustering (which we haven't added yet).
+                .limit(2000);
+
+            if (currencyFilter !== 'all') query = query.eq('value_currency', currencyFilter);
+
+            const { data: coins, error } = await query;
+            if (error) {
+                statsEl.textContent = '';
+                container.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; color:#f55;">Failed to load coins: ${esc(error.message)}</div>`;
+                return;
+            }
+
+            // Apply status filter client-side (computeCoinStatus is shared
+            // with Browse and combines is_active + expired + view_limit).
+            const filtered = (coins || []).filter(c => {
+                const status = computeCoinStatus(c);
+                if (statusFilter === 'active') return status === 'active';
+                if (statusFilter === 'inactive') return status === 'inactive';
+                if (statusFilter === 'fully_claimed') return status === 'fully_claimed';
+                return true; // 'all'
+            }).filter(c =>
+                c.latitude != null && c.longitude != null && !isNaN(c.latitude) && !isNaN(c.longitude)
+            );
+
+            if (filtered.length === 0) {
+                statsEl.textContent = '0 coins match the current filters.';
+                container.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; color:#888; flex-direction:column; gap:10px;"><div style="font-size:38px;">🗺️</div><div>No coins to show on the map.</div></div>`;
+                return;
+            }
+
+            statsEl.textContent = `Showing ${filtered.length} coin${filtered.length === 1 ? '' : 's'} on the map. Click a marker to edit.`;
+
+            // Initialize the map on first load. Reuse on subsequent reloads
+            // (just clear + add new markers) so the user's pan/zoom state
+            // isn't lost between refreshes.
+            if (!_adminMapInstance) {
+                // Replace the loading-message div with a real map container.
+                container.innerHTML = '';
+                _adminMapInstance = new google.maps.Map(container, {
+                    center: { lat: filtered[0].latitude, lng: filtered[0].longitude },
+                    zoom: 10,
+                    mapTypeControl: false,
+                    streetViewControl: false,
+                    fullscreenControl: true,
+                    // Dark map styling to match the admin theme.
+                    styles: [
+                        { elementType: 'geometry', stylers: [{ color: '#1a1a1a' }] },
+                        { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a1a' }] },
+                        { elementType: 'labels.text.fill', stylers: [{ color: '#888' }] },
+                        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2a2a2a' }] },
+                        { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a0a0a' }] },
+                        { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+                    ],
+                });
+                _adminMapInfoWindow = new google.maps.InfoWindow();
+            }
+
+            // Build markers + auto-fit bounds.
+            const bounds = new google.maps.LatLngBounds();
+            for (const coin of filtered) {
+                const status = computeCoinStatus(coin);
+                const color = {
+                    active:        '#4CAF50',
+                    inactive:      '#9E9E9E',
+                    expired:       '#FF9800',
+                    fully_claimed: '#9C27B0',
+                }[status] || '#888';
+
+                const marker = new google.maps.Marker({
+                    position: { lat: coin.latitude, lng: coin.longitude },
+                    map: _adminMapInstance,
+                    title: coin.title || '(untitled)',
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 9,
+                        fillColor: color,
+                        fillOpacity: 0.95,
+                        strokeColor: '#000',
+                        strokeWeight: 2,
+                    },
+                });
+
+                marker.addListener('click', () => {
+                    _adminMapInfoWindow.setContent(buildMapInfoWindowHtml(coin, status));
+                    _adminMapInfoWindow.open(_adminMapInstance, marker);
+                });
+
+                _adminMapMarkers.push(marker);
+                bounds.extend({ lat: coin.latitude, lng: coin.longitude });
+            }
+
+            // Fit bounds with a tiny padding so markers aren't at the edge.
+            // Skip if only one marker (fit-to-1 produces extreme zoom).
+            if (filtered.length > 1) {
+                _adminMapInstance.fitBounds(bounds, 60);
+            } else {
+                _adminMapInstance.setCenter({ lat: filtered[0].latitude, lng: filtered[0].longitude });
+                _adminMapInstance.setZoom(15);
+            }
+        }
+
+        // Renders the InfoWindow content shown when an admin clicks a coin
+        // marker on the map. Buttons reuse the per-coin handlers already
+        // defined for the Browse table — anything we improve there also
+        // improves here.
+        function buildMapInfoWindowHtml(coin, status) {
+            const statusBadge = {
+                active:        { label: '● ACTIVE',        color: '#4CAF50' },
+                inactive:      { label: 'INACTIVE',        color: '#9E9E9E' },
+                expired:       { label: 'EXPIRED',         color: '#FF9800' },
+                fully_claimed: { label: '✓ FULLY CLAIMED', color: '#9C27B0' },
+            }[status];
+            const valueLabel = coin.value_currency === 'USD'
+                ? `$${((coin.reward_amount || 0) / 100).toFixed(2)}`
+                : `${(coin.reward_amount || 0).toLocaleString()} credits`;
+            const claimsLabel = `${coin.views_count || 0}${coin.view_limit ? ` / ${coin.view_limit}` : ' / ∞'}`;
+
+            // InfoWindow content is rendered inside a Google-Maps-styled
+            // white popover by default — we use light text colors and
+            // override the background to match the admin theme.
+            return `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; min-width: 240px; max-width: 320px; color: #222;">
+                    <div style="font-size: 14px; font-weight: 700; color: #111; margin-bottom: 4px;">${esc(coin.title || '(untitled)')}</div>
+                    <div style="font-size: 11px; font-family: Menlo, Monaco, monospace; color: #888; margin-bottom: 8px;">${esc(coin.coin_code || coin.id)}</div>
+                    <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12px; color: #444; margin-bottom: 10px;">
+                        <span style="color: #888;">Value:</span> <span style="font-weight: 600; color: #B8860B;">${valueLabel}</span>
+                        <span style="color: #888;">Status:</span> <span style="color: ${statusBadge.color}; font-weight: 600;">${statusBadge.label}</span>
+                        <span style="color: #888;">Claims:</span> <span>${claimsLabel}</span>
+                        <span style="color: #888;">Radius:</span> <span>${coin.radius || '?'} m</span>
+                    </div>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button onclick="openCoinDetail('${jsEsc(coin.id)}')" style="padding: 6px 12px; background: #00d4ff; color: #000; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                            ✏️ Edit / View
+                        </button>
+                        <button onclick="mapToggleCoinActive('${jsEsc(coin.id)}', ${!coin.is_active})" style="padding: 6px 12px; background: ${coin.is_active ? '#FF9800' : '#4CAF50'}; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                            ${coin.is_active ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button onclick="mapDeleteCoin('${jsEsc(coin.id)}', '${jsEsc(coin.coin_code || coin.id)}')" style="padding: 6px 12px; background: #FF4757; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                </div>`;
+        }
+
+        // Per-coin action handlers scoped to the map view. They invalidate
+        // the relevant caches + reload markers so the visual reflects the
+        // new state immediately.
+        async function mapToggleCoinActive(coinId, makeActive) {
+            const { error } = await supabaseClient
+                .from('admin_drops')
+                .update({ is_active: makeActive })
+                .eq('id', coinId);
+            if (error) {
+                adminToast('Failed to update: ' + error.message, 'error');
+                return;
+            }
+            adminToast(`Coin ${makeActive ? 'activated' : 'deactivated'}`, 'success');
+            if (_adminMapInfoWindow) _adminMapInfoWindow.close();
+            _browseCoinsLoaded = false;
+            loadMapView();
+        }
+
+        async function mapDeleteCoin(coinId, label) {
+            const ok = await adminConfirm({
+                title: 'Delete this coin?',
+                message: `Permanently removes coin <strong>${label}</strong> and its claim history.<br><br>This cannot be undone.`,
+                dangerLevel: 'destructive',
+                confirmLabel: 'Delete coin',
+            });
+            if (!ok) return;
+            const { error } = await supabaseClient.rpc('admin_bulk_delete_admin_drops', { p_drop_ids: [coinId] });
+            if (error) {
+                adminToast('Delete failed: ' + error.message, 'error');
+                return;
+            }
+            adminToast('Coin deleted', 'success');
+            if (_adminMapInfoWindow) _adminMapInfoWindow.close();
+            _browseCoinsLoaded = false;
+            loadMapView();
         }
 
         // ============================================================
