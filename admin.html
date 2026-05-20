@@ -1629,39 +1629,17 @@
             const isUUID = UUID_RE.test(q);
             const queries = [];
 
-            // Search users via three SEPARATE queries (then dedupe), instead of one
-            // big PostgREST .or() — that approach silently fails when % wildcards
-            // and commas in the OR string trip URL encoding. Three round-trips is
-            // fine for an admin tool, and they run in parallel anyway.
-            const userCols = 'id, username, email, avatar_url, is_admin, is_banned, deleted_at, deleted_username';
-            const userByUsername = supabaseClient.from('users').select(userCols).ilike('username', `%${q}%`).limit(8);
-            const userByEmail = supabaseClient.from('users').select(userCols).ilike('email', `%${q}%`).limit(8);
-            const userByDeleted = supabaseClient.from('users').select(userCols).ilike('deleted_username', `%${q}%`).limit(8);
-            const userById = isUUID ? supabaseClient.from('users').select(userCols).eq('id', q).limit(1) : Promise.resolve({ data: [] });
-
-            queries.push(Promise.all([userByUsername, userByEmail, userByDeleted, userById]).then(parts => {
-                // Dedupe by user id — the same user can match multiple filters
-                const seen = new Set();
-                const merged = [];
-                for (const p of parts) {
-                    for (const u of (p.data || [])) {
-                        if (seen.has(u.id)) continue;
-                        seen.add(u.id);
-                        merged.push(u);
-                    }
-                }
-                // Sort alphabetically by username (case-insensitive). Falls back
-                // to deleted_username then email so soft-deleted accounts and
-                // email-only matches still order sensibly. Without a sort, the
-                // dropdown ordering depended on which of the 4 parallel queries
-                // returned first — felt random to admins.
-                merged.sort((a, b) => {
-                    const ka = (a.username || a.deleted_username || a.email || '').toLowerCase();
-                    const kb = (b.username || b.deleted_username || b.email || '').toLowerCase();
-                    return ka.localeCompare(kb);
-                });
-                return { kind: 'users', rows: merged.slice(0, 12) };
-            }));
+            // User search via the admin_search_users RPC (SECURITY DEFINER,
+            // is_admin gated). Replaces the old 4 direct select() queries —
+            // those still work today but break once email is REVOKE'd from
+            // the authenticated role (the RPC reads email server-side). The
+            // RPC matches username / email / deleted_username / id and
+            // returns the full row, sorted by username.
+            queries.push(
+                supabaseClient.rpc('admin_search_users', { p_query: q }).then(({ data }) => {
+                    return { kind: 'users', rows: (data || []).slice(0, 12) };
+                })
+            );
 
             if (isUUID) {
                 // UUID-only lookups for content tables
@@ -1975,19 +1953,16 @@
                 allUsers = [];
             }
 
-            let query = supabaseClient
-                .from('users')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(PAGE_SIZE);
-
-            if (state.cursor) {
-                // Cursor = the created_at of the last row we got. Pull rows
-                // STRICTLY older than that to avoid duplicating the boundary row.
-                query = query.lt('created_at', state.cursor);
-            }
-
-            const { data: users, error } = await query;
+            // Use the admin_list_users RPC instead of a direct select('*').
+            // The PII column revokes (phone/push_token/location) make a
+            // select('*') fail for the authenticated admin role; this
+            // SECURITY DEFINER RPC (is_admin gated) returns the full row
+            // incl the PII the dashboard needs. p_before is the created_at
+            // cursor for keyset pagination.
+            const { data: users, error } = await supabaseClient.rpc('admin_list_users', {
+                p_limit: PAGE_SIZE,
+                p_before: state.cursor,
+            });
             state.loading = false;
 
             if (error) {
@@ -2204,12 +2179,15 @@
         }
 
         async function openUserDetail(userId) {
-            // Get user data
-            const { data: user } = await supabaseClient
-                .from('users')
-                .select('*')
-                .eq('id', userId)
-                .single();
+            // Get user data via the admin_get_user RPC. A direct select('*')
+            // now fails for the authenticated admin role (PII columns
+            // phone/push_token/location are REVOKE'd); this SECURITY DEFINER
+            // RPC (is_admin gated) returns the full row. RPC returns SETOF →
+            // an array, so take [0].
+            const { data: userRows } = await supabaseClient.rpc('admin_get_user', {
+                p_user_id: userId,
+            });
+            const user = Array.isArray(userRows) ? userRows[0] : userRows;
 
             if (!user) return;
 
