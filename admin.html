@@ -1888,9 +1888,11 @@
         }
 
         async function loadStats() {
+            // Count on 'id' (not '*') — a select('*') count trips on the
+            // PII columns REVOKE'd from authenticated and returns 0.
             const { count: userCount } = await supabaseClient
                 .from('users')
-                .select('*', { count: 'exact', head: true });
+                .select('id', { count: 'exact', head: true });
 
             const { count: blipCount } = await supabaseClient
                 .from('blips')
@@ -1898,7 +1900,7 @@
 
             const { count: bannedCount } = await supabaseClient
                 .from('users')
-                .select('*', { count: 'exact', head: true })
+                .select('id', { count: 'exact', head: true })
                 .eq('is_banned', true);
 
             // Soft-deleted users — exposed by migration 20260422000001.
@@ -1909,7 +1911,7 @@
             // (which also clears deleted_at and may restore the username).
             const { count: deletedCount } = await supabaseClient
                 .from('users')
-                .select('*', { count: 'exact', head: true })
+                .select('id', { count: 'exact', head: true })
                 .not('deleted_at', 'is', null);
 
             // Count both blip_reports and announcement_reports
