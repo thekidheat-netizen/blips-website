@@ -2948,7 +2948,7 @@ Use this only when:
         async function promptEmailChange(userId, currentEmail, username) {
             const newEmail = await adminPrompt({
                 title: `Change email for @${username}`,
-                message: `Current: ${currentEmail || '(none)'}\n\nThis will update BOTH auth.users (login) and public.users (profile) atomically. If the auth update fails, the public.users change rolls back.`,
+                message: `Current: ${currentEmail || '(none)'}\n\nUpdates the login email and the profile together (server-side). The user can sign in with the new email immediately.`,
                 defaultValue: currentEmail || '',
                 placeholder: 'newemail@example.com',
                 dangerLevel: 'warning',
@@ -2962,28 +2962,20 @@ Use this only when:
             }
 
             try {
-                const { error: publicError } = await supabaseClient
-                    .from('users')
-                    .update({ email: newEmail })
-                    .eq('id', userId);
+                // Server-side atomic change via the admin-change-email Edge
+                // Function. The GoTrue admin API (which actually changes the
+                // login email) requires the service role, which the browser
+                // doesn't have — the old browser-side auth.admin call silently
+                // failed. The function updates auth.users + public.users
+                // together and rolls auth back if the profile update fails.
+                const { data, error } = await supabaseClient.functions.invoke('admin-change-email', {
+                    body: { target_user_id: userId, new_email: newEmail },
+                });
 
-                if (publicError) {
-                    adminToast('public.users update failed: ' + publicError.message, 'error');
-                    return;
-                }
-
-                const { error: authError } = await supabaseClient.auth.admin.updateUserById(
-                    userId,
-                    { email: newEmail }
-                );
-
-                if (authError) {
-                    // Rollback public.users so the two stay in sync
-                    await supabaseClient
-                        .from('users')
-                        .update({ email: currentEmail })
-                        .eq('id', userId);
-                    adminToast('auth.users update failed (rolled back): ' + authError.message, 'error', 6000);
+                if (error) {
+                    let msg = error.message;
+                    try { const b = await error.context.json(); if (b?.error) msg = b.error; } catch (_) {}
+                    adminToast('Email change failed: ' + msg, 'error', 6000);
                     return;
                 }
 
