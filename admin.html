@@ -2327,6 +2327,14 @@
                 .select('id', { count: 'exact', head: true })
                 .eq('user_id', userId);
 
+            // The warnings themselves, so an admin can revoke one given in error.
+            const { data: userWarnings } = await supabaseClient
+                .from('user_warnings')
+                .select('id, category, title, reason, created_at, expires_at')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(20);
+
             // Get auth metadata via the admin-only RPC (migration
             // 20260516000014). last_sign_in_at lives in auth.users which
             // PostgREST can't read directly. Falls back to null silently
@@ -2661,6 +2669,26 @@
                 </div>
 
                 <div class="action-section">
+                    <h3>⚠️ Warnings (${warningCount || 0})</h3>
+                    ${userWarnings && userWarnings.length > 0 ? `
+                        ${userWarnings.map(w => {
+                            const showing = new Date(w.expires_at).getTime() > Date.now();
+                            return `
+                            <div class="history-item">
+                                <div class="history-item-header">
+                                    <div class="history-item-action">${esc(w.title)} ${showing ? '<span class="badge" style="background:#FF9800; color:#fff;" title="Currently visible in the user\\'s notifications">SHOWING</span>' : ''}</div>
+                                    <div class="history-item-date">${new Date(w.created_at).toLocaleString()}</div>
+                                </div>
+                                <div class="history-item-details">
+                                    ${w.reason ? 'Reason: ' + esc(w.reason) + '<br>' : ''}
+                                    <button class="btn btn-secondary" style="margin-top:8px;" onclick="removeWarning('${w.id}', '${userId}')">↩️ Remove warning</button>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    ` : '<p style="color: #999;">No warnings issued</p>'}
+                </div>
+
+                <div class="action-section">
                     <h3>Admin Action History</h3>
                     ${adminLogs && adminLogs.length > 0 ? `
                         ${adminLogs.map(log => `
@@ -2704,7 +2732,8 @@
                 'purge_user': '🔥 User Permanently Purged',
                 'soft_delete_announcement': '🗑️ Announcement Removed',
                 'warn_user': '⚠️ Warning Issued',
-                'admin_delete_comment': '🗑️ Comment Deleted'
+                'admin_delete_comment': '🗑️ Comment Deleted',
+                'remove_warning': '↩️ Warning Removed'
             };
             return types[actionType] || actionType;
         }
@@ -2785,6 +2814,23 @@
             const uid = warnTargetUserId;
             closeWarnModal();
             openUserDetail(uid); // refresh the card (count + history)
+        }
+
+        async function removeWarning(warningId, userId) {
+            const ok = await adminConfirm({
+                title: 'Remove warning',
+                message: 'This deletes the warning from the user\'s record and removes it from their notifications. Use this if the warning was given in error.',
+                confirmLabel: 'Remove warning',
+            });
+            if (!ok) return;
+            const { error } = await supabaseClient.rpc('admin_remove_warning', { p_warning_id: warningId });
+            if (error) {
+                adminToast('Remove failed: ' + error.message, 'error');
+                return;
+            }
+            await logAdminAction('remove_warning', userId, { warning_id: warningId }, 'Removed a warning (issued in error)');
+            adminToast('Warning removed', 'success');
+            openUserDetail(userId); // refresh count + list
         }
 
         async function logAdminAction(actionType, targetUserId, actionDetails, notes) {
