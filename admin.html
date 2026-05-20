@@ -1931,7 +1931,9 @@
                 .select('id', { count: 'exact', head: true })
                 .not('deleted_at', 'is', null);
 
-            // Count both blip_reports and announcement_reports
+            // Pending reports across ALL report types (blip, announcement,
+            // comment, profile, video reply) — previously only blip +
+            // announcement were counted, so the tile undercounted.
             const { count: blipPendingCount } = await supabaseClient
                 .from('blip_reports')
                 .select('*', { count: 'exact', head: true })
@@ -1947,7 +1949,22 @@
                 .select('*', { count: 'exact', head: true })
                 .eq('status', 'pending');
 
-            const pendingCount = (blipPendingCount || 0) + (announcementPendingCount || 0) + (commentPendingCount || 0);
+            // profile_reports also holds ban "appeals" (report_type='appeal'),
+            // which live in the Appeals tab, not Reports — exclude them so the
+            // count matches what the Reports tab shows.
+            const { count: profilePendingCount } = await supabaseClient
+                .from('profile_reports')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending')
+                .neq('report_type', 'appeal');
+
+            const { count: videoReplyPendingCount } = await supabaseClient
+                .from('video_reply_reports')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending');
+
+            const pendingCount = (blipPendingCount || 0) + (announcementPendingCount || 0)
+                + (commentPendingCount || 0) + (profilePendingCount || 0) + (videoReplyPendingCount || 0);
 
             const { count: pendingVerifications } = await supabaseClient
                 .from('verification_applications')
