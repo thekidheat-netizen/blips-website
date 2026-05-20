@@ -1356,6 +1356,23 @@
         const { createClient } = supabase;
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+        // Batch-fetch emails for a set of user IDs via the admin RPC. Used
+        // by views that previously read email through an embedded FK join
+        // (appeals, verification, drop analytics, withdrawal viewers) — email
+        // is REVOKE'd from the authenticated role, so embeds can't pull it;
+        // this reads it server-side (is_admin gated). Returns { id: email }.
+        async function fetchEmailMap(ids) {
+            const unique = [...new Set((ids || []).filter(Boolean))];
+            if (!unique.length) return {};
+            try {
+                const { data } = await supabaseClient.rpc('admin_get_user_emails', { p_ids: unique });
+                return Object.fromEntries((data || []).map(r => [r.id, r.email]));
+            } catch (e) {
+                console.warn('[admin] fetchEmailMap failed:', e);
+                return {};
+            }
+        }
+
         let allUsers = [];
         let currentUserFilter = 'all'; // 'all' | 'active' | 'banned' | 'deleted'
         // Sort mode for the user list. Client-side sort over the loaded set
@@ -2923,16 +2940,13 @@ Use this only when:
         }
 
         async function resetUserPassword(userId, username, emailFromCard) {
-            // Resolve the email. The card may not have it (older render code,
-            // or RLS hiding the column), so fall back to a fresh query.
+            // Resolve the email. The card may not have it, so fall back to
+            // the admin_get_user_emails RPC (email is REVOKE'd from
+            // authenticated, so a direct .select('email') would fail).
             let email = emailFromCard;
             if (!email) {
-                const { data: u } = await supabaseClient
-                    .from('users')
-                    .select('email')
-                    .eq('id', userId)
-                    .maybeSingle();
-                email = u?.email;
+                const emap = await fetchEmailMap([userId]);
+                email = emap[userId];
             }
             if (!email) {
                 adminToast(`Can't reset @${username}: no email on file.`, 'error', 5000);
@@ -3468,13 +3482,18 @@ Use this only when:
                     reviewed_at,
                     created_at,
                     report_type,
-                    reported_user:users!profile_reports_reported_user_id_fkey(id, username, avatar_url, is_banned, email)
+                    reported_user:users!profile_reports_reported_user_id_fkey(id, username, avatar_url, is_banned)
                 `)
                 .eq('report_type', 'appeal')
                 .order('created_at', { ascending: false })
                 .limit(appealsLimit);
 
             allAppeals = appeals || [];
+            // email is REVOKE'd from authenticated, so it's no longer in the
+            // embed above — fetch it via the admin RPC and attach so the
+            // existing render + email filter keep working.
+            const emap = await fetchEmailMap(allAppeals.map(a => a.reported_user_id));
+            allAppeals.forEach(a => { if (a.reported_user) a.reported_user.email = emap[a.reported_user_id] || null; });
             filterAppeals();
         }
 
@@ -4338,7 +4357,7 @@ Use this only when:
                 .from('verification_applications')
                 .select(`
                     *,
-                    user:users!verification_applications_user_id_fkey(id, username, avatar_url, email, display_name, is_verified)
+                    user:users!verification_applications_user_id_fkey(id, username, avatar_url, display_name, is_verified)
                 `)
                 .order('created_at', { ascending: false })
                 .limit(verificationsLimit);
@@ -4350,6 +4369,10 @@ Use this only when:
             }
 
             allVerifications = verifications || [];
+            // email REVOKE'd from authenticated → fetch via admin RPC + attach
+            // so the verification rows + detail still show the applicant email.
+            const emap = await fetchEmailMap(allVerifications.map(v => v.user?.id));
+            allVerifications.forEach(v => { if (v.user) v.user.email = emap[v.user.id] || null; });
             filterVerifications();
         }
 
@@ -6065,7 +6088,7 @@ Use this only when:
                     .from('admin_drop_views')
                     .select(`
                         viewer_id, viewed_at, claimed_at, watch_progress_pct,
-                        viewer:users!admin_drop_views_viewer_id_fkey(id, username, email, avatar_url)
+                        viewer:users!admin_drop_views_viewer_id_fkey(id, username, avatar_url)
                     `)
                     .eq('admin_drop_id', dropId)
                     .order('claimed_at', { ascending: false, nullsLast: true });
@@ -6080,6 +6103,11 @@ Use this only when:
                     contentDiv.innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">No claims yet — this coin hasn't been viewed by anyone.</div>`;
                     return;
                 }
+
+                // email REVOKE'd from authenticated → fetch via admin RPC +
+                // attach to each viewer so the audit table still shows email.
+                const emap = await fetchEmailMap(views.map(v => v.viewer?.id || v.viewer_id));
+                views.forEach(v => { if (v.viewer) v.viewer.email = emap[v.viewer.id] || null; });
 
                 // Audit panel — distinguishes claimed vs viewed-only.
                 const claimedCount = views.filter(v => v.claimed_at).length;
@@ -7280,7 +7308,7 @@ Use this only when:
 
                 const [usersRes, ledgerRes] = await Promise.all([
                     viewerIds.length > 0
-                        ? supabaseClient.from('users').select('id, username, email').in('id', viewerIds)
+                        ? supabaseClient.from('users').select('id, username').in('id', viewerIds)
                         : Promise.resolve({ data: [], error: null }),
                     claimIds.length > 0
                         ? supabaseClient.from('user_credit_ledger')
@@ -7293,6 +7321,10 @@ Use this only when:
                 if (ledgerRes.error) console.log('[admin-coins] ledger fetch error', ledgerRes.error);
 
                 const usersById = new Map((usersRes.data || []).map(u => [u.id, u]));
+                // email REVOKE'd from authenticated → fetch via admin RPC +
+                // attach to each user so the coin-claim viewer list shows it.
+                const coinEmap = await fetchEmailMap(viewerIds);
+                usersById.forEach((u, id) => { u.email = coinEmap[id] || null; });
                 const ledgerByClaimId = new Map((ledgerRes.data || []).map(l => [l.source_id, l]));
 
                 detailPane.innerHTML = renderCoinDetailHtml(coin, claims, usersById, ledgerByClaimId);
