@@ -717,6 +717,7 @@
                     <button class="tab" onclick="showTab('appeals')">Appeals</button>
                     <button class="tab" onclick="showTab('verifications')">Verifications</button>
                     <button class="tab" onclick="showTab('admin-drops')">Admin Drops</button>
+                    <button class="tab" onclick="showTab('deleted')">🗑️ Recently Deleted</button>
                 </div>
 
                 <div class="content">
@@ -761,6 +762,23 @@
                         </div>
 
                         <div id="blipsSearchResults"></div>
+                    </div>
+
+                    <!-- Recently Deleted Tab -->
+                    <div id="deleted-tab" class="tab-content">
+                        <h2 style="margin-bottom: 8px;">🗑️ Recently Deleted Blips</h2>
+                        <p style="color: #666; margin-bottom: 16px;">
+                            Soft-deleted blips still inside their retention window. After
+                            <strong>Purges</strong>, the daily cleanup job permanently removes the
+                            video + thumbnail from storage and the row from the database. Blips with
+                            an <strong>active report</strong> have their purge timer suspended until
+                            the report is resolved.
+                        </p>
+                        <div style="margin-bottom: 16px;">
+                            <button class="btn btn-primary" onclick="loadDeletedBlips()">🔄 Refresh</button>
+                            <span id="deletedBlipsCount" style="margin-left:12px; color:#888; font-size:13px;"></span>
+                        </div>
+                        <div id="deletedBlipsTable"></div>
                     </div>
 
                     <!-- Reports Tab -->
@@ -7451,6 +7469,85 @@ Use this only when:
                     }
                 }, 100);
             }
+
+            // Lazy-load the Recently Deleted list on first open.
+            if (tab === 'deleted') {
+                loadDeletedBlips();
+            }
+        }
+
+        // ==================================================================
+        // RECENTLY DELETED (soft-deleted blips inside their retention window)
+        // ==================================================================
+        // Format a FUTURE timestamp as "in 2d 5h" / "in 3h" / "overdue".
+        // (formatRelative only handles past times.)
+        function formatUntil(iso) {
+            if (!iso) return '—';
+            let ms = new Date(iso).getTime() - Date.now();
+            if (ms <= 0) return 'overdue';
+            const d = Math.floor(ms / 86400000); ms -= d * 86400000;
+            const h = Math.floor(ms / 3600000);  ms -= h * 3600000;
+            const m = Math.floor(ms / 60000);
+            if (d > 0) return `in ${d}d ${h}h`;
+            if (h > 0) return `in ${h}h ${m}m`;
+            return `in ${m}m`;
+        }
+
+        async function loadDeletedBlips() {
+            const container = document.getElementById('deletedBlipsTable');
+            const countEl = document.getElementById('deletedBlipsCount');
+            container.innerHTML = '<p style="color:#888;">Loading…</p>';
+            if (countEl) countEl.textContent = '';
+
+            const { data, error } = await supabaseClient.rpc('admin_list_soft_deleted_blips', { p_limit: 200 });
+            if (error) {
+                container.innerHTML = `<p style="color:#e53935;">Failed to load: ${esc(error.message)}</p>`;
+                return;
+            }
+            const rows = data || [];
+            if (countEl) countEl.textContent = `${rows.length} soft-deleted blip${rows.length === 1 ? '' : 's'}`;
+            if (rows.length === 0) {
+                container.innerHTML = '<p style="color:#888;">No soft-deleted blips in the retention window. 🎉</p>';
+                return;
+            }
+
+            const body = rows.map(b => {
+                const thumb = b.thumbnail_url
+                    ? `<img src="${esc(b.thumbnail_url)}" onclick="playBlipVideo('${jsEsc(b.video_url)}', '@${jsEsc(b.username || 'user')}')" style="width:48px; height:48px; border-radius:6px; object-fit:cover; cursor:pointer;" title="Play video">`
+                    : '<div style="width:48px; height:48px; background:#222; border-radius:6px;"></div>';
+                const reportBadge = b.has_active_report
+                    ? '<span class="badge" style="background:#FF9800; color:#fff;" title="Purge suspended until the report is resolved">⚠️ ACTIVE REPORT</span>'
+                    : '<span style="color:#9E9E9E; font-size:12px;">—</span>';
+                const purges = b.has_active_report
+                    ? '<span style="color:#FF9800;" title="Suspended until report resolved">suspended</span>'
+                    : esc(formatUntil(b.purge_after));
+                return `
+                    <tr>
+                        <td>${thumb}</td>
+                        <td>
+                            <div style="font-size:12px; color:#bbb;">@${esc(b.username || 'unknown')}</div>
+                            <div style="font-size:11px; color:#666;">${esc((b.caption || '').slice(0, 60))}</div>
+                            <div style="font-size:10px; color:#555;" title="${esc(b.id)}">${esc(String(b.id).slice(0, 8))}…</div>
+                        </td>
+                        <td title="${esc(new Date(b.soft_deleted_at).toLocaleString())}">${esc(formatRelative(b.soft_deleted_at))}</td>
+                        <td title="${esc(b.purge_after ? new Date(b.purge_after).toLocaleString() : '')}">${purges}</td>
+                        <td>${reportBadge}</td>
+                    </tr>`;
+            }).join('');
+
+            container.innerHTML = `
+                <table style="width:100%; border-collapse:collapse;">
+                    <thead>
+                        <tr style="text-align:left; border-bottom:2px solid #333; color:#888; font-size:12px;">
+                            <th style="padding:8px;">Preview</th>
+                            <th style="padding:8px;">Blip / User</th>
+                            <th style="padding:8px;">Deleted</th>
+                            <th style="padding:8px;">Purges</th>
+                            <th style="padding:8px;">Report</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>`;
         }
 
         // Emoji picker functions
