@@ -3383,9 +3383,12 @@ Use this only when:
             // Filter by status
             let filtered = allReports.filter(report => {
                 if (currentReportFilter === 'pending') {
-                    return report.status === 'pending';
+                    // "Pending" = still needs attention. 'investigating' is an
+                    // open case (it also suspends the blip purge timer), so it
+                    // belongs in the active queue, not hidden under "All".
+                    return report.status === 'pending' || report.status === 'investigating';
                 } else if (currentReportFilter === 'resolved') {
-                    return report.status === 'reviewed' || report.status === 'dismissed';
+                    return report.status === 'reviewed' || report.status === 'dismissed' || report.status === 'actioned';
                 }
                 return true; // 'all' filter
             });
@@ -3500,7 +3503,7 @@ Use this only when:
                                 </td>
                                 <td>${report.reason}</td>
                                 <td style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${report.details || 'No additional details'}">${report.details || '-'}</td>
-                                <td><span class="badge" style="background: ${report.status === 'pending' ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span></td>
+                                <td><span class="badge" style="background: ${(report.status === 'pending' || report.status === 'investigating') ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span></td>
                                 <td>
                                     <button class="btn btn-primary" onclick="openReportDetail('${report.id}', '${report.reportType}')">View Report</button>
                                     <select
@@ -3510,8 +3513,10 @@ Use this only when:
                                     >
                                         <option value="${report.status}" selected>${report.status}</option>
                                         ${report.status !== 'pending' ? '<option value="pending">pending</option>' : ''}
+                                        ${report.status !== 'investigating' ? '<option value="investigating">investigating</option>' : ''}
                                         ${report.status !== 'reviewed' ? '<option value="reviewed">reviewed</option>' : ''}
                                         ${report.status !== 'dismissed' ? '<option value="dismissed">dismissed</option>' : ''}
+                                        ${report.status !== 'actioned' ? '<option value="actioned">actioned</option>' : ''}
                                     </select>
                                 </td>
                             </tr>
@@ -3955,7 +3960,7 @@ Use this only when:
                             <div>
                                 <strong style="color: #333;">Status:</strong>
                                 <p style="margin-top: 5px;">
-                                    <span class="badge" style="background: ${report.status === 'pending' ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
+                                    <span class="badge" style="background: ${(report.status === 'pending' || report.status === 'investigating') ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
                                 </p>
                             </div>
                         </div>
@@ -4050,8 +4055,10 @@ Use this only when:
                         >
                             <option value="${report.status}" selected>${report.status}</option>
                             ${report.status !== 'pending' ? '<option value="pending">pending</option>' : ''}
+                            ${report.status !== 'investigating' ? '<option value="investigating">investigating</option>' : ''}
                             ${report.status !== 'reviewed' ? '<option value="reviewed">reviewed</option>' : ''}
                             ${report.status !== 'dismissed' ? '<option value="dismissed">dismissed</option>' : ''}
+                            ${report.status !== 'actioned' ? '<option value="actioned">actioned</option>' : ''}
                         </select>
                     </div>
                 `;
@@ -4075,7 +4082,7 @@ Use this only when:
                             <div>
                                 <strong style="color: #333;">Status:</strong>
                                 <p style="margin-top: 5px;">
-                                    <span class="badge" style="background: ${report.status === 'pending' ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
+                                    <span class="badge" style="background: ${(report.status === 'pending' || report.status === 'investigating') ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
                                 </p>
                             </div>
                         </div>
@@ -4174,8 +4181,10 @@ Use this only when:
                         >
                             <option value="${report.status}" selected>${report.status}</option>
                             ${report.status !== 'pending' ? '<option value="pending">pending</option>' : ''}
+                            ${report.status !== 'investigating' ? '<option value="investigating">investigating</option>' : ''}
                             ${report.status !== 'reviewed' ? '<option value="reviewed">reviewed</option>' : ''}
                             ${report.status !== 'dismissed' ? '<option value="dismissed">dismissed</option>' : ''}
+                            ${report.status !== 'actioned' ? '<option value="actioned">actioned</option>' : ''}
                         </select>
                     </div>
                 `;
@@ -4201,7 +4210,7 @@ Use this only when:
                             <div>
                                 <strong style="color: #333;">Status:</strong>
                                 <p style="margin-top: 5px;">
-                                    <span class="badge" style="background: ${report.status === 'pending' ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
+                                    <span class="badge" style="background: ${(report.status === 'pending' || report.status === 'investigating') ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
                                 </p>
                             </div>
                         </div>
@@ -4287,8 +4296,10 @@ Use this only when:
                         >
                             <option value="${report.status}" selected>${report.status}</option>
                             ${report.status !== 'pending' ? '<option value="pending">pending</option>' : ''}
+                            ${report.status !== 'investigating' ? '<option value="investigating">investigating</option>' : ''}
                             ${report.status !== 'reviewed' ? '<option value="reviewed">reviewed</option>' : ''}
                             ${report.status !== 'dismissed' ? '<option value="dismissed">dismissed</option>' : ''}
+                            ${report.status !== 'actioned' ? '<option value="actioned">actioned</option>' : ''}
                         </select>
                     </div>
                 `;
@@ -4312,7 +4323,7 @@ Use this only when:
                             <div>
                                 <strong style="color: #333;">Status:</strong>
                                 <p style="margin-top: 5px;">
-                                    <span class="badge" style="background: ${report.status === 'pending' ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
+                                    <span class="badge" style="background: ${(report.status === 'pending' || report.status === 'investigating') ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
                                 </p>
                             </div>
                         </div>
@@ -4350,8 +4361,10 @@ Use this only when:
                         >
                             <option value="${report.status}" selected>${report.status}</option>
                             ${report.status !== 'pending' ? '<option value="pending">pending</option>' : ''}
+                            ${report.status !== 'investigating' ? '<option value="investigating">investigating</option>' : ''}
                             ${report.status !== 'reviewed' ? '<option value="reviewed">reviewed</option>' : ''}
                             ${report.status !== 'dismissed' ? '<option value="dismissed">dismissed</option>' : ''}
+                            ${report.status !== 'actioned' ? '<option value="actioned">actioned</option>' : ''}
                         </select>
                     </div>
                 `;
@@ -4374,7 +4387,7 @@ Use this only when:
                             <div>
                                 <strong style="color: #333;">Status:</strong>
                                 <p style="margin-top: 5px;">
-                                    <span class="badge" style="background: ${report.status === 'pending' ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
+                                    <span class="badge" style="background: ${(report.status === 'pending' || report.status === 'investigating') ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
                                 </p>
                             </div>
                         </div>
@@ -4421,8 +4434,10 @@ Use this only when:
                         >
                             <option value="${report.status}" selected>${report.status}</option>
                             ${report.status !== 'pending' ? '<option value="pending">pending</option>' : ''}
+                            ${report.status !== 'investigating' ? '<option value="investigating">investigating</option>' : ''}
                             ${report.status !== 'reviewed' ? '<option value="reviewed">reviewed</option>' : ''}
                             ${report.status !== 'dismissed' ? '<option value="dismissed">dismissed</option>' : ''}
+                            ${report.status !== 'actioned' ? '<option value="actioned">actioned</option>' : ''}
                         </select>
                     </div>
                 `;
