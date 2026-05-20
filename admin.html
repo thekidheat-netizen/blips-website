@@ -1327,6 +1327,34 @@
         </div>
     </div>
 
+    <!-- Warn User Modal -->
+    <div id="warnUserModal" class="modal">
+        <div class="modal-content" style="max-width: 560px;">
+            <h2 style="margin-bottom: 6px;">⚠️ Warn <span id="warnUsername"></span></h2>
+            <p style="color:#999; font-size:13px; margin-bottom:16px;">
+                The user sees this at the top of their notifications for 24 hours. Every warning is
+                counted — repeated warnings escalate toward an account review.
+            </p>
+
+            <label style="display:block; font-weight:600; margin-bottom:6px;">Template</label>
+            <select id="warnTemplate" onchange="updateWarnPreview()" style="width:100%; padding:10px 12px; border:2px solid #ddd; border-radius:8px; font-size:14px; margin-bottom:14px;"></select>
+
+            <label style="display:block; font-weight:600; margin-bottom:6px;">Reason / specifics</label>
+            <textarea id="warnReason" oninput="updateWarnPreview()" rows="3" placeholder="e.g. Bullying or harassment in a comment" style="width:100%; padding:10px 12px; border:2px solid #ddd; border-radius:8px; font-size:14px; resize:vertical; margin-bottom:14px;"></textarea>
+
+            <label style="display:block; font-weight:600; margin-bottom:6px;">Preview (what the user sees)</label>
+            <div style="background:#5E1742; color:#F8E8F0; border-left:4px solid #DF86CD; border-radius:10px; padding:14px; margin-bottom:18px;">
+                <div id="warnPreviewTitle" style="color:#fff; font-weight:700; margin-bottom:6px;"></div>
+                <div id="warnPreviewBody" style="font-size:13px; line-height:1.4;"></div>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button class="btn btn-secondary" onclick="closeWarnModal()">Cancel</button>
+                <button class="btn btn-warning" onclick="submitWarning()">Send Warning</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Verification Detail Modal -->
     <div id="verificationDetailModal" class="modal">
         <div class="modal-content" style="max-width: 900px;">
@@ -2293,6 +2321,12 @@
                 .order('created_at', { ascending: false })
                 .limit(20);
 
+            // Running warning count (shown on the card + drives escalation).
+            const { count: warningCount } = await supabaseClient
+                .from('user_warnings')
+                .select('id', { count: 'exact', head: true })
+                .eq('user_id', userId);
+
             // Get auth metadata via the admin-only RPC (migration
             // 20260516000014). last_sign_in_at lives in auth.users which
             // PostgREST can't read directly. Falls back to null silently
@@ -2399,7 +2433,7 @@
                 </div>
 
                 <div class="action-section">
-                    <h3>Admin Actions</h3>
+                    <h3>Admin Actions${warningCount > 0 ? ` <span style="background:#5E1742;color:#fff;border-radius:10px;padding:2px 10px;font-size:13px;margin-left:8px;">⚠️ ${warningCount} warning${warningCount === 1 ? '' : 's'}</span>` : ''}</h3>
                     <div class="action-grid">
                         ${user.deleted_at ? `
                             <!-- Soft-deleted accounts get Restore + Purge.
@@ -2413,6 +2447,7 @@
                                 ? `<button class="btn btn-warning" onclick="banUser('${user.id}', '${user.username}')">Ban User</button>`
                                 : `<button class="btn btn-success" onclick="unbanUser('${user.id}', '${user.username}')">Unban User</button>`
                             }
+                            <button class="btn btn-warning" onclick="openWarnModal('${user.id}', '${user.username}')">⚠️ Warn User</button>
                             ${!user.is_verified
                                 ? `<button class="btn btn-primary" onclick="manualVerifyUser('${user.id}', '${user.username}')">✓ Verify User</button>`
                                 : `<button class="btn btn-secondary" onclick="manualUnverifyUser('${user.id}', '${user.username}')">Remove Verification</button>`
@@ -2667,13 +2702,89 @@
                 'verification_removed': '✗ Verification Removed',
                 'restore_user': '♻️ User Restored',
                 'purge_user': '🔥 User Permanently Purged',
-                'soft_delete_announcement': '🗑️ Announcement Removed'
+                'soft_delete_announcement': '🗑️ Announcement Removed',
+                'warn_user': '⚠️ Warning Issued',
+                'admin_delete_comment': '🗑️ Comment Deleted'
             };
             return types[actionType] || actionType;
         }
 
         function closeUserDetail() {
             document.getElementById('userDetailModal').classList.remove('show');
+        }
+
+        // ── Warn User ──────────────────────────────────────────────────
+        // Templates the user sees; {reason} is filled with the admin's input.
+        // The "repeated warnings → review/ban" escalation line is added by the
+        // app's notification banner (with the live count), so it's not repeated
+        // in every template body.
+        const WARNING_TEMPLATES = [
+            { key: 'comment_removed', label: 'Comment removed', title: 'Your comment was removed',
+              body: 'Your comment was removed because: {reason}. Please remember to be thoughtful and respectful — Blips is a community for everyone.' },
+            { key: 'harassment', label: 'Bullying / harassment', title: 'Warning: harassment',
+              body: 'We received a report of bullying or harassment: {reason}. This is not allowed on Blips. Please treat others with respect.' },
+            { key: 'nudity', label: 'Nudity / graphic content', title: 'Warning: inappropriate content',
+              body: 'Content you posted was removed for nudity or graphic material: {reason}. Please keep Blips appropriate for everyone.' },
+            { key: 'spam', label: 'Spam', title: 'Warning: spam',
+              body: 'Your activity was flagged as spam: {reason}. Please do not post repetitive or misleading content.' },
+            { key: 'general', label: 'General conduct', title: 'Community guidelines warning',
+              body: 'An admin has issued a warning about your activity: {reason}. Please review our community guidelines and be respectful.' },
+        ];
+        let warnTargetUserId = null;
+
+        function renderWarnBody(tpl, reason) {
+            const r = (reason || '').trim() || '(no reason provided)';
+            return tpl.body.replace('{reason}', r);
+        }
+
+        function openWarnModal(userId, username) {
+            warnTargetUserId = userId;
+            document.getElementById('warnUsername').textContent = '@' + username;
+            const sel = document.getElementById('warnTemplate');
+            sel.innerHTML = WARNING_TEMPLATES.map((t, i) => `<option value="${i}">${t.label}</option>`).join('');
+            sel.value = '0';
+            document.getElementById('warnReason').value = '';
+            updateWarnPreview();
+            document.getElementById('warnUserModal').classList.add('show');
+        }
+
+        function updateWarnPreview() {
+            const idx = parseInt(document.getElementById('warnTemplate').value || '0', 10);
+            const tpl = WARNING_TEMPLATES[idx] || WARNING_TEMPLATES[0];
+            document.getElementById('warnPreviewTitle').textContent = tpl.title;
+            document.getElementById('warnPreviewBody').textContent = renderWarnBody(tpl, document.getElementById('warnReason').value);
+        }
+
+        function closeWarnModal() {
+            document.getElementById('warnUserModal').classList.remove('show');
+            warnTargetUserId = null;
+        }
+
+        async function submitWarning() {
+            if (!warnTargetUserId) return;
+            const idx = parseInt(document.getElementById('warnTemplate').value || '0', 10);
+            const tpl = WARNING_TEMPLATES[idx] || WARNING_TEMPLATES[0];
+            const reason = document.getElementById('warnReason').value.trim();
+            const body = renderWarnBody(tpl, reason);
+
+            const { data, error } = await supabaseClient.rpc('admin_warn_user', {
+                p_user_id: warnTargetUserId,
+                p_category: tpl.key,
+                p_title: tpl.title,
+                p_body: body,
+                p_reason: reason || null,
+            });
+            if (error) {
+                adminToast('Warning failed: ' + error.message, 'error', 6000);
+                return;
+            }
+            // Log to admin_logs so it shows in this user's Admin Action History.
+            await logAdminAction('warn_user', warnTargetUserId, { category: tpl.key, reason: reason || null }, body);
+            const count = data && data.warning_count;
+            adminToast(`Warning sent${count ? ` (warning #${count})` : ''}`, 'success');
+            const uid = warnTargetUserId;
+            closeWarnModal();
+            openUserDetail(uid); // refresh the card (count + history)
         }
 
         async function logAdminAction(actionType, targetUserId, actionDetails, notes) {
@@ -4346,7 +4457,7 @@ Use this only when:
                     <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
                         <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${report.reported_by}')">View Reporter Profile</button>
                         ${comment?.user_id ? `<button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${comment.user_id}')">View Commenter Profile</button>` : ''}
-                        ${comment?.id ? `<button class="btn btn-danger" onclick="deleteCommentFromReport('${comment.id}', '@${commenter?.username || 'Unknown'}', '${report.id}')">Delete Comment</button>` : ''}
+                        ${comment?.id ? `<button class="btn btn-danger" onclick="deleteCommentFromReport('${comment.id}', '@${jsEsc(commenter?.username || 'Unknown')}', '${report.id}', '${comment?.user_id || ''}', '${jsEsc(report.reason || '')}')">Delete Comment</button>` : ''}
                         <select
                             onchange="updateReportStatusFromDetail('${report.id}', this.value, '${reportType}')"
                             style="padding: 8px 12px; border-radius: 6px; border: 2px solid #ddd; font-size: 14px; cursor: pointer; background: white;"
@@ -4494,7 +4605,7 @@ Use this only when:
             loadStats();
         }
 
-        async function deleteCommentFromReport(commentId, username, reportId) {
+        async function deleteCommentFromReport(commentId, username, reportId, authorUserId, reason) {
             const ok = await adminConfirm({
                 title: `Delete comment by ${username}`,
                 message: `This permanently removes the comment (and any replies to it).\n\nComment ID: ${commentId}\nReport ID: ${reportId}\n\nThis CANNOT be undone.`,
@@ -4515,7 +4626,14 @@ Use this only when:
                 return;
             }
 
-            await logAdminAction('admin_delete_comment', null, { comment_id: commentId, report_id: reportId }, `Deleted reported comment by ${username}`);
+            // Log against the COMMENT AUTHOR (not null) + the report reason, so it
+            // shows in that user's Admin Action History with the "why".
+            await logAdminAction(
+                'admin_delete_comment',
+                authorUserId || null,
+                { comment_id: commentId, report_id: reportId, reason: reason || null },
+                `Deleted reported comment by ${username}${reason ? ' — ' + reason : ''}`,
+            );
             adminToast('Comment deleted', 'success');
             closeReportDetail();
             loadReports();
