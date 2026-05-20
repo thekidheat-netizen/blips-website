@@ -1886,7 +1886,7 @@
         let reportsRealtimeRefreshTimer = null;
         function attachReportsRealtime() {
             if (reportsRealtimeChannel) return; // already attached
-            const tables = ['blip_reports', 'announcement_reports', 'video_reply_reports', 'profile_reports'];
+            const tables = ['blip_reports', 'announcement_reports', 'video_reply_reports', 'profile_reports', 'blip_comment_reports'];
             reportsRealtimeChannel = supabaseClient.channel('admin-reports-feed');
             for (const tbl of tables) {
                 reportsRealtimeChannel.on('postgres_changes', { event: '*', schema: 'public', table: tbl },
@@ -1942,7 +1942,12 @@
                 .select('*', { count: 'exact', head: true })
                 .eq('status', 'pending');
 
-            const pendingCount = (blipPendingCount || 0) + (announcementPendingCount || 0);
+            const { count: commentPendingCount } = await supabaseClient
+                .from('blip_comment_reports')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending');
+
+            const pendingCount = (blipPendingCount || 0) + (announcementPendingCount || 0) + (commentPendingCount || 0);
 
             const { count: pendingVerifications } = await supabaseClient
                 .from('verification_applications')
@@ -3285,11 +3290,46 @@ Use this only when:
             }
             console.log('Video reply reports loaded:', videoReplyReports);
 
+            // Load comment reports. The comment author is joinable
+            // (blip_comments.user_id → users), but the reporter is not
+            // (reported_by → auth.users, no public.users FK), so — like video
+            // reply reports — we fetch reporter usernames separately.
+            const { data: commentReports, error: commentReportError } = await supabaseClient
+                .from('blip_comment_reports')
+                .select(`
+                    *,
+                    comment:blip_comments(
+                        id, content, user_id, blip_id, created_at,
+                        commenter:users!blip_comments_user_id_fkey(id, username)
+                    )
+                `)
+                .order('created_at', { ascending: false })
+                .limit(reportsLimit);
+
+            if (commentReportError) {
+                console.error('Error loading comment reports:', commentReportError);
+            }
+
+            if (commentReports && commentReports.length > 0) {
+                const reporterIds = [...new Set(commentReports.map(r => r.reported_by))];
+                const { data: reporters } = await supabaseClient
+                    .from('users')
+                    .select('id, username')
+                    .in('id', reporterIds);
+                if (reporters) {
+                    const reporterMap = Object.fromEntries(reporters.map(u => [u.id, u]));
+                    commentReports.forEach(report => {
+                        report.reporter = reporterMap[report.reported_by];
+                    });
+                }
+            }
+
             allReports = [
                 ...(blipReports || []).map(r => ({ ...r, reportType: 'blip' })),
                 ...(announcementReports || []).map(r => ({ ...r, reportType: 'announcement' })),
                 ...(profileReports || []).map(r => ({ ...r, reportType: 'profile' })),
-                ...(videoReplyReports || []).map(r => ({ ...r, reportType: 'video_reply' }))
+                ...(videoReplyReports || []).map(r => ({ ...r, reportType: 'video_reply' })),
+                ...(commentReports || []).map(r => ({ ...r, reportType: 'comment' }))
             ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
             filterReports();
@@ -3345,6 +3385,9 @@ Use this only when:
                     } else if (report.reportType === 'video_reply') {
                         return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
                                report.video_reply?.replier?.username?.toLowerCase().includes(searchQuery);
+                    } else if (report.reportType === 'comment') {
+                        return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
+                               report.comment?.commenter?.username?.toLowerCase().includes(searchQuery);
                     } else {
                         return report.reporter?.username?.toLowerCase().includes(searchQuery) ||
                                report.reported_user?.username?.toLowerCase().includes(searchQuery);
@@ -3397,6 +3440,12 @@ Use this only when:
                                 reportedByUser = report.reporter?.username;
                                 reportedUser = report.video_reply?.replier?.username;
                                 reportedUserId = report.video_reply?.replied_by;
+                            } else if (report.reportType === 'comment') {
+                                badgeColor = '#E6F7F1';
+                                badgeTextColor = '#1B9E77';
+                                reportedByUser = report.reporter?.username;
+                                reportedUser = report.comment?.commenter?.username;
+                                reportedUserId = report.comment?.user_id;
                             } else {
                                 badgeColor = '#E8F0FF';
                                 badgeTextColor = '#4A90E2';
@@ -3417,7 +3466,9 @@ Use this only when:
                                                 ? `<img src="${report.video_reply.thumbnail_url}" style="width: 60px; height: 60px; border-radius: 8px; cursor: pointer;" onclick="playBlipVideo('${report.video_reply.video_url}', 'Video Reply')">`
                                                 : report.reportType === 'profile' && report.reported_user?.avatar_url
                                                     ? `<img src="${report.reported_user.avatar_url}" class="avatar">`
-                                                    : '📹'
+                                                    : report.reportType === 'comment'
+                                                        ? `<div style="max-width:220px; font-size:13px; color:#333; font-style:italic; white-space:normal;">“${(report.comment?.content || '(comment unavailable)').slice(0, 90).replace(/</g, '&lt;')}”</div>`
+                                                        : '📹'
                                     }
                                 </td>
                                 <td>
@@ -3468,6 +3519,8 @@ Use this only when:
                 tableName = 'announcement_reports';
             } else if (reportType === 'video_reply') {
                 tableName = 'video_reply_reports';
+            } else if (reportType === 'comment') {
+                tableName = 'blip_comment_reports';
             } else {
                 tableName = 'profile_reports';
             }
@@ -4211,6 +4264,68 @@ Use this only when:
                             <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${videoReply.replied_by}')">View Sender Profile</button>
                             <button class="btn btn-danger" onclick="deleteVideoReplyFromReport('${videoReply.id}', '@${sender?.username || 'Unknown'}', '${report.id}')">Delete Video Reply</button>
                         ` : ''}
+                        <select
+                            onchange="updateReportStatusFromDetail('${report.id}', this.value, '${reportType}')"
+                            style="padding: 8px 12px; border-radius: 6px; border: 2px solid #ddd; font-size: 14px; cursor: pointer; background: white;"
+                        >
+                            <option value="${report.status}" selected>${report.status}</option>
+                            ${report.status !== 'pending' ? '<option value="pending">pending</option>' : ''}
+                            ${report.status !== 'reviewed' ? '<option value="reviewed">reviewed</option>' : ''}
+                            ${report.status !== 'dismissed' ? '<option value="dismissed">dismissed</option>' : ''}
+                        </select>
+                    </div>
+                `;
+            } else if (reportType === 'comment') {
+                // Comment report
+                const comment = report.comment;
+                const commenter = comment?.commenter;
+                const reporter = report.reporter;
+
+                html = `
+                    <h2 style="margin-bottom: 20px;">Comment Report Details</h2>
+
+                    <div style="background: #E6F7F1; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #1B9E77;">
+                        <h3 style="color: #1B9E77; margin-bottom: 15px;">Report Information</h3>
+
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <strong style="color: #333;">Reason:</strong>
+                                <p style="color: #666; margin-top: 5px;">${report.reason}</p>
+                            </div>
+                            <div>
+                                <strong style="color: #333;">Status:</strong>
+                                <p style="margin-top: 5px;">
+                                    <span class="badge" style="background: ${report.status === 'pending' ? '#FFA500' : '#4CAF50'}; color: white;">${report.status}</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                            <div>
+                                <strong style="color: #333;">Reported By:</strong>
+                                <p style="margin-top: 5px;">
+                                    <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${report.reported_by}')">@${reporter?.username || 'Unknown'}</span>
+                                </p>
+                            </div>
+                            <div>
+                                <strong style="color: #333;">Reported On:</strong>
+                                <p style="color: #666; margin-top: 5px;">${new Date(report.created_at).toLocaleString()}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background: #f9f9f9; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                        <h3 style="color: #333; margin-bottom: 15px;">Reported Comment</h3>
+                        <p style="color: #333; font-style: italic; background: white; padding: 12px; border-radius: 8px; white-space: pre-wrap;">“${(comment?.content || '(comment unavailable — may have been deleted)').replace(/</g, '&lt;')}”</p>
+                        <p style="margin-top: 12px;">
+                            <strong style="color:#333;">By:</strong>
+                            <span class="clickable-username" onclick="closeReportDetail(); openUserDetail('${comment?.user_id || ''}')">@${commenter?.username || 'Unknown'}</span>
+                        </p>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+                        <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${report.reported_by}')">View Reporter Profile</button>
+                        ${comment?.user_id ? `<button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${comment.user_id}')">View Commenter Profile</button>` : ''}
                         <select
                             onchange="updateReportStatusFromDetail('${report.id}', this.value, '${reportType}')"
                             style="padding: 8px 12px; border-radius: 6px; border: 2px solid #ddd; font-size: 14px; cursor: pointer; background: white;"
