@@ -2393,7 +2393,7 @@
                             <button class="btn btn-info" onclick="promptUsernameChange('${user.id}', '${user.username}')">Change Username</button>
                             <button class="btn btn-info" onclick="promptDisplayNameChange('${user.id}', '${user.display_name || ''}')">Change Display Name</button>
                             <button class="btn btn-info" onclick="promptEmailChange('${user.id}', '${user.email || ''}', '${user.username}')">Change Email</button>
-                            <button class="btn btn-info" onclick="resetUserPassword('${user.id}', '${user.username}')">Reset Password</button>
+                            <button class="btn btn-info" onclick="resetUserPassword('${user.id}', '${user.username}', '${(user.email || '').replace(/'/g, "\\'")}')">Reset Password</button>
                             <button class="btn btn-warning" onclick="deleteAllUserBlips('${user.id}', '${user.username}')">Delete All Blips</button>
                             <button class="btn btn-danger" onclick="deleteUser('${user.id}', '${user.username}')">Delete Account</button>
                         `}
@@ -2942,17 +2942,51 @@ Use this only when:
             }
         }
 
-        async function resetUserPassword(userId, username) {
+        async function resetUserPassword(userId, username, emailFromCard) {
+            // Resolve the email. The card may not have it (older render code,
+            // or RLS hiding the column), so fall back to a fresh query.
+            let email = emailFromCard;
+            if (!email) {
+                const { data: u } = await supabaseClient
+                    .from('users')
+                    .select('email')
+                    .eq('id', userId)
+                    .maybeSingle();
+                email = u?.email;
+            }
+            if (!email) {
+                adminToast(`Can't reset @${username}: no email on file.`, 'error', 5000);
+                return;
+            }
+
             const notes = await adminPrompt({
                 title: `Reset password for @${username}`,
-                message: 'Note: this dashboard cannot directly reset their password — the user must request a reset via email.\n\nLog the reason for support reference:',
+                message: `This will send a password reset link to:\n${email}\n\nThe link lands on https://blipsdigital.com/reset-password and lets them choose a new password.\n\nLog the reason for support reference:`,
                 placeholder: 'e.g. User contacted support unable to log in',
                 multiline: true,
             });
             if (!notes) return;
 
-            await logAdminAction('password_reset', userId, null, notes);
-            adminToast(`Password reset logged for @${username}. They must reset via email.`, 'info', 5000);
+            // Actually trigger the reset email. As of 2026-05-19 Supabase
+            // SMTP is wired through Resend → reliable delivery, no 4/hour
+            // built-in-SMTP rate limit.
+            const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+                redirectTo: 'https://blipsdigital.com/reset-password',
+            });
+
+            if (error) {
+                // Common cases: rate limit ("For security purposes, you can
+                // only request this after N seconds"), invalid email, SMTP
+                // misconfigured. Surface the raw message so the admin can
+                // act on it.
+                adminToast(`Reset failed for @${username}: ${error.message}`, 'error', 8000);
+                // Still log the attempt so the audit trail captures the failure.
+                await logAdminAction('password_reset_failed', userId, { email, error: error.message }, notes);
+                return;
+            }
+
+            await logAdminAction('password_reset', userId, { email }, notes);
+            adminToast(`Reset link sent to ${email}`, 'success', 5000);
         }
 
         async function deleteAllUserBlips(userId, username) {
