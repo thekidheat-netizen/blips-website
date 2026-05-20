@@ -4326,6 +4326,7 @@ Use this only when:
                     <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
                         <button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${report.reported_by}')">View Reporter Profile</button>
                         ${comment?.user_id ? `<button class="btn btn-info" onclick="closeReportDetail(); openUserDetail('${comment.user_id}')">View Commenter Profile</button>` : ''}
+                        ${comment?.id ? `<button class="btn btn-danger" onclick="deleteCommentFromReport('${comment.id}', '@${commenter?.username || 'Unknown'}', '${report.id}')">Delete Comment</button>` : ''}
                         <select
                             onchange="updateReportStatusFromDetail('${report.id}', this.value, '${reportType}')"
                             style="padding: 8px 12px; border-radius: 6px; border: 2px solid #ddd; font-size: 14px; cursor: pointer; background: white;"
@@ -4464,6 +4465,34 @@ Use this only when:
             }
 
             adminToast('Video reply deleted', 'success');
+            closeReportDetail();
+            loadReports();
+            loadStats();
+        }
+
+        async function deleteCommentFromReport(commentId, username, reportId) {
+            const ok = await adminConfirm({
+                title: `Delete comment by ${username}`,
+                message: `This permanently removes the comment (and any replies to it).\n\nComment ID: ${commentId}\nReport ID: ${reportId}\n\nThis CANNOT be undone.`,
+                dangerLevel: 'destructive',
+                confirmLabel: 'Delete comment',
+            });
+            if (!ok) return;
+
+            // admin_delete_comment: SECURITY DEFINER, verifies is_admin
+            // server-side, bypasses RLS. The delete CASCADEs to replies, likes,
+            // and the comment's own report rows.
+            const { error } = await supabaseClient.rpc('admin_delete_comment', {
+                p_comment_id: commentId,
+            });
+
+            if (error) {
+                adminToast('Delete failed: ' + error.message, 'error');
+                return;
+            }
+
+            await logAdminAction('admin_delete_comment', null, { comment_id: commentId, report_id: reportId }, `Deleted reported comment by ${username}`);
+            adminToast('Comment deleted', 'success');
             closeReportDetail();
             loadReports();
             loadStats();
