@@ -5354,55 +5354,55 @@ Use this only when:
             return { lat: centerLat + dLat, lng: centerLng + dLng };
         }
 
-        // Snap an array of points to nearest roads using Google Roads API.
+        // Snap arbitrary scattered points to the NEAREST road using Google's
+        // Roads "nearestRoads" API. This is the correct API for coin scatter:
+        // unlike snapToRoads (designed for GPS *traces* — it only returns
+        // points already sitting ~on a road and SILENTLY drops the rest, which
+        // is exactly how coins ended up in lakes), nearestRoads returns the
+        // closest road segment for each independent point. So a coin that
+        // randomly landed in a lake gets pulled to the nearest street on shore.
+        //
         // Roads API caps at 100 points per request, so we batch.
-        // If snapping fails for some points (rural area with no nearby roads),
-        // we keep the original — better to drop a coin in a less ideal spot
-        // than lose the coin entirely.
-        // Returns { points: [{lat, lng}], snappedCount, errorMsg }
-        // Reports back how many points were snapped vs kept original, and any
-        // top-level API errors (e.g., Roads API not enabled in GCP, quota exceeded).
-        async function snapPointsToRoads(points) {
+        // Returns { points: [{lat, lng}], errorMsg } containing ONLY on-road
+        // points — points with no road anywhere nearby are OMITTED, never kept,
+        // so a coin can never be placed in water/wilderness.
+        async function snapPointsToNearestRoad(points) {
             const out = [];
-            let snappedCount = 0;
             let errorMsg = null;
             const BATCH = 100;
             for (let i = 0; i < points.length; i += BATCH) {
                 const slice = points.slice(i, i + BATCH);
-                const path = slice.map(p => `${p.lat},${p.lng}`).join('|');
+                const pointsParam = slice.map(p => `${p.lat},${p.lng}`).join('|');
                 try {
                     const resp = await fetch(
-                        `https://roads.googleapis.com/v1/snapToRoads?path=${encodeURIComponent(path)}&key=${GOOGLE_API_KEY}`
+                        `https://roads.googleapis.com/v1/nearestRoads?points=${encodeURIComponent(pointsParam)}&key=${GOOGLE_API_KEY}`
                     );
                     const json = await resp.json();
                     if (json.error) {
                         // Common causes: API not enabled, quota exceeded, billing not set up
                         const msg = `${json.error.code} ${json.error.message || json.error.status || 'unknown'}`;
-                        console.warn('Roads API error:', json.error);
+                        console.warn('Roads API (nearestRoads) error:', json.error);
                         errorMsg = errorMsg || msg;
-                        slice.forEach(p => out.push(p));
-                        continue;
+                        continue; // do NOT keep originals — they may be in water
                     }
+                    // nearestRoads can return several snapped candidates for the
+                    // same originalIndex (e.g. near an intersection). Keep the
+                    // first per index.
                     const snapped = json.snappedPoints || [];
-                    const usedIdx = new Set();
+                    const seen = new Set();
                     snapped.forEach(sp => {
                         const idx = sp.originalIndex ?? -1;
-                        if (idx >= 0 && idx < slice.length) {
+                        if (idx >= 0 && !seen.has(idx) && sp.location) {
+                            seen.add(idx);
                             out.push({ lat: sp.location.latitude, lng: sp.location.longitude });
-                            usedIdx.add(idx);
-                            snappedCount++;
                         }
                     });
-                    slice.forEach((p, idx) => {
-                        if (!usedIdx.has(idx)) out.push(p);
-                    });
                 } catch (e) {
-                    console.warn('snapPointsToRoads batch failed', e);
+                    console.warn('nearestRoads batch failed', e);
                     errorMsg = errorMsg || (e?.message || 'network error');
-                    slice.forEach(p => out.push(p));
                 }
             }
-            return { points: out, snappedCount, errorMsg };
+            return { points: out, errorMsg };
         }
 
         async function createBulkAdminDrop() {
@@ -5457,38 +5457,69 @@ Use this only when:
                 if (upErr) { progress.textContent = 'Upload failed: ' + upErr.message; return; }
                 const { data: { publicUrl } } = supabaseClient.storage.from('blip-videos').getPublicUrl(fileName);
 
-                // Step 1: generate random candidate points
-                progress.textContent = `Picking ${count} random spots…`;
-                const candidates = [];
-                for (let i = 0; i < count; i++) {
-                    candidates.push(randomPointInDisc(
-                        bulkSelectedCenter.lat,
-                        bulkSelectedCenter.lng,
-                        spreadKm * 1000
-                    ));
+                // Steps 1+2: generate random candidates and snap each to the
+                // NEAREST road. Points that land far from any road (deep water,
+                // wilderness) won't snap — and we must NEVER place those (that's
+                // how coins ended up in lakes). So we oversample and keep
+                // snapping fresh random points until we have `count` on-road
+                // points or hit the round cap.
+                progress.textContent = `Snapping ${count} coins to nearest roads…`;
+                const onRoad = [];
+                let snapError = null;
+                let placedRandom = false;
+                const MAX_ROUNDS = 6;
+                for (let round = 0; round < MAX_ROUNDS && onRoad.length < count; round++) {
+                    const need = count - onRoad.length;
+                    // oversample to absorb points with no nearby road
+                    const batchN = Math.min(500, Math.max(Math.ceil(need * 1.5), 10));
+                    const cands = [];
+                    for (let i = 0; i < batchN; i++) {
+                        cands.push(randomPointInDisc(
+                            bulkSelectedCenter.lat,
+                            bulkSelectedCenter.lng,
+                            spreadKm * 1000
+                        ));
+                    }
+                    const res = await snapPointsToNearestRoad(cands);
+                    if (res.errorMsg) { snapError = res.errorMsg; break; }
+                    for (const p of res.points) {
+                        if (onRoad.length >= count) break;
+                        onRoad.push(p);
+                    }
+                    progress.textContent = `Snapping coins to roads… ${onRoad.length}/${count}`;
                 }
 
-                // Step 2: snap each candidate to the nearest road
-                progress.textContent = `Snapping ${count} coins to nearest roads…`;
-                const snapResult = await snapPointsToRoads(candidates);
-
-                // Loud warning if Roads API failed wholesale — coins will land on
-                // mountains/water if so. Most likely cause: Roads API not enabled
-                // in Google Cloud Console for this API key.
-                if (snapResult.errorMsg) {
+                // Roads API genuinely failed (not enabled / quota / billing).
+                // Do NOT silently place off-road — make the admin opt in.
+                if (snapError) {
                     const proceed = await adminConfirm({
                         title: 'Roads API failed',
-                        message: `Could not snap coins to roads:\n\n${snapResult.errorMsg}\n\nCoins will be placed at random points (may land on mountains, water, or private property).\n\nFix: enable the Roads API in Google Cloud Console for the API key, then try again. Continue anyway?`,
+                        message: `Could not snap coins to roads:\n\n${snapError}\n\nFix: enable the Roads API in Google Cloud Console for this API key, then try again.\n\nIf you continue, coins will be placed at RANDOM points and may land in water / on mountains / private property.`,
                         dangerLevel: 'destructive',
-                        confirmLabel: 'Place coins anyway',
+                        confirmLabel: 'Place at random anyway',
                     });
                     if (!proceed) { progress.style.display = 'none'; return; }
-                } else if (snapResult.snappedCount < count) {
-                    adminToast(`Snapped ${snapResult.snappedCount}/${count} coins to roads — rest stay at random points (no nearby road).`, 'info', 5000);
+                    placedRandom = true;
+                    while (onRoad.length < count) {
+                        onRoad.push(randomPointInDisc(
+                            bulkSelectedCenter.lat,
+                            bulkSelectedCenter.lng,
+                            spreadKm * 1000
+                        ));
+                    }
+                }
+
+                if (onRoad.length === 0) {
+                    progress.style.display = 'none';
+                    adminToast('No roads found near that area — pick a denser spot or a larger spread.', 'error', 6000);
+                    return;
+                }
+                if (!placedRandom && onRoad.length < count) {
+                    adminToast(`Only ${onRoad.length}/${count} coins could be placed on roads near that area. Try a larger spread or a denser area for more.`, 'info', 6000);
                 }
 
                 // Step 3: assign each a random value in [min, max]
-                const points = snapResult.points.map(p => ({
+                const points = onRoad.map(p => ({
                     lat: p.lat,
                     lng: p.lng,
                     value: valueMin === valueMax
@@ -5537,7 +5568,7 @@ Use this only when:
                     }
                 }
 
-                adminToast(`✅ Dropped ${data.created_count} coins (snapped to roads)! Total: ${currency === 'USD' ? `$${(data.total_value / 100).toFixed(2)}` : `${data.total_value} credits`}`, 'success', 6500);
+                adminToast(`✅ Dropped ${data.created_count} coins ${placedRandom ? '(RANDOM placement — Roads API was unavailable)' : '(snapped to roads)'}! Total: ${currency === 'USD' ? `$${(data.total_value / 100).toFixed(2)}` : `${data.total_value} credits`}`, 'success', 6500);
 
                 // Show generated coin codes in a callout (with copy-all). The RPC
                 // returns them in data.coin_codes (added in migration 20260516000010).
