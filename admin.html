@@ -5570,11 +5570,52 @@ Use this only when:
 
                 adminToast(`✅ Dropped ${data.created_count} coins ${placedRandom ? '(RANDOM placement — Roads API was unavailable)' : '(snapped to roads)'}! Total: ${currency === 'USD' ? `$${(data.total_value / 100).toFixed(2)}` : `${data.total_value} credits`}`, 'success', 6500);
 
+                // Fan out ONE push per nearby user for the whole batch. Bulk drops
+                // never auto-notified before — the form's notification message was
+                // collected and stored on each coin but never actually sent. We
+                // only notify when the admin actually entered a message.
+                let bulkNotif = { notificationsSent: 0, recipients: [] };
+                if (notif && data.batch_id) {
+                    try {
+                        progress.style.display = 'block';
+                        progress.textContent = 'Sending notifications…';
+                        const { data: { session } } = await supabaseClient.auth.getSession();
+                        const nResp = await fetch(`${SUPABASE_URL}/functions/v1/notify-drop-batch`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`,
+                            },
+                            body: JSON.stringify({
+                                batchId: data.batch_id,
+                                latitude: bulkSelectedCenter.lat,
+                                longitude: bulkSelectedCenter.lng,
+                                notificationRadiusMiles: notifRad,
+                                message: notif,
+                                coinCount: data.created_count,
+                            }),
+                        });
+                        const nJson = await nResp.json();
+                        if (nResp.ok) {
+                            bulkNotif = nJson;
+                            adminToast(`📬 Notified ${bulkNotif.notificationsSent} ${bulkNotif.notificationsSent === 1 ? 'person' : 'people'} nearby`, 'info', 5000);
+                        } else {
+                            console.warn('[admin-coins] batch notify failed', nJson);
+                            adminToast('Coins dropped, but notifications failed: ' + (nJson.error || nResp.statusText), 'error', 6000);
+                        }
+                    } catch (e) {
+                        console.warn('[admin-coins] batch notify threw', e);
+                        adminToast('Coins dropped, but notifications failed (network).', 'error', 6000);
+                    } finally {
+                        progress.style.display = 'none';
+                    }
+                }
+
                 // Show generated coin codes in a callout (with copy-all). The RPC
                 // returns them in data.coin_codes (added in migration 20260516000010).
                 // batch_id added in migration 20260516000015 — surfaces the new
                 // bulk batch in the callout with a one-click jump to Batches.
-                showBulkCoinCodesCallout(data.coin_codes || [], currency, data.total_value, data.batch_id);
+                showBulkCoinCodesCallout(data.coin_codes || [], currency, data.total_value, data.batch_id, bulkNotif, notif);
 
                 // Refresh Browse table if it's been loaded so the new coins appear.
                 if (typeof _browseCoinsLoaded !== 'undefined' && _browseCoinsLoaded) {
@@ -5591,18 +5632,20 @@ Use this only when:
         // migration 20260516000015. Surfaces a "Manage batch" link that jumps
         // straight to the new Batches sub-tab where the admin can delete-all
         // if they want.
-        function showBulkCoinCodesCallout(codes, currency, totalValue, batchId) {
+        function showBulkCoinCodesCallout(codes, currency, totalValue, batchId, notifResult, notifMessage) {
             const box = document.getElementById('bulkDropResultCallout');
             if (!box) return;
             const batchLink = batchId
                 ? `<button class="btn btn-info" onclick="setAdminDropsSubTab('batches')" style="padding:8px 16px; font-size:12px;">📦 Manage this batch →</button>`
                 : '';
+            const notifSection = buildDropNotifSectionHtml(notifResult, notifMessage, 'batch', batchId);
             if (!Array.isArray(codes) || codes.length === 0) {
                 box.style.display = 'block';
                 box.innerHTML = `
                     <div style="color:#FFD700; font-weight:700; margin-bottom:6px;">✅ Dropped ${currency === 'USD' ? `$${(totalValue/100).toFixed(2)}` : `${totalValue} credits`} worth of coins</div>
                     <div style="color:#888; font-size:12px;">No coin codes were returned by the RPC. Open the Browse sub-tab to see them.</div>
                     ${batchLink ? `<div style="margin-top:10px;">${batchLink}</div>` : ''}
+                    ${notifSection}
                 `;
                 return;
             }
@@ -5620,10 +5663,83 @@ Use this only when:
                 <div id="bulkDropCoinCodesList" style="max-height:200px; overflow-y:auto; background:#000; border:1px solid #111; border-radius:6px; padding:10px;">
                     ${codeListHtml}
                 </div>
+                ${notifSection}
             `;
             // Stash the raw codes for the copy button (avoids re-querying DOM)
             window._lastBulkCoinCodes = codes.slice();
             console.log('[admin-coins] bulk drop produced codes:', codes);
+        }
+
+        // Builds the "who got notified" section shown in the post-drop callouts.
+        // notifResult = { notificationsSent, recipients: [{username, distance_miles}] }
+        // lookupKind/lookupId let the admin re-fetch the saved recipient list
+        // later (kind = 'drop' for single drops, 'batch' for bulk batches).
+        function buildDropNotifSectionHtml(notifResult, notifMessage, lookupKind, lookupId) {
+            // No message entered → nothing was sent (push notification is optional).
+            if (!notifMessage) {
+                return `<div style="margin-top:12px; border-top:1px solid #111; padding-top:10px; color:#888; font-size:12px;">📭 No push notification sent (the notification message field was left empty).</div>`;
+            }
+            const count = (notifResult && notifResult.notificationsSent) || 0;
+            const recips = (notifResult && Array.isArray(notifResult.recipients)) ? notifResult.recipients.slice() : [];
+            recips.sort((a, b) => (a.distance_miles || 0) - (b.distance_miles || 0));
+            const listHtml = recips.length
+                ? recips.map(r => `<div style="display:flex; justify-content:space-between; gap:10px; padding:4px 0; font-size:12px; color:#ddd; border-bottom:1px solid #0d0d0d;"><span>@${esc(r.username || 'unknown')}</span><span style="color:#888; white-space:nowrap;">${(r.distance_miles != null) ? Number(r.distance_miles).toFixed(1) + ' mi' : ''}</span></div>`).join('')
+                : `<div style="color:#888; font-size:12px;">No nearby users had a recent location + push token within range.</div>`;
+            const lookupBtn = (lookupKind && lookupId)
+                ? `<button class="btn btn-secondary" onclick="viewDropRecipients('${jsEsc(lookupKind)}','${jsEsc(lookupId)}')" style="padding:6px 12px; font-size:11px;">👥 View recipients</button>`
+                : '';
+            return `
+                <div style="margin-top:12px; border-top:1px solid #111; padding-top:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <strong style="color:#00d4ff; font-size:13px;">📬 Notified ${count} ${count === 1 ? 'person' : 'people'}</strong>
+                        ${lookupBtn}
+                    </div>
+                    ${recips.length ? `<div style="max-height:160px; overflow-y:auto; background:#000; border:1px solid #111; border-radius:6px; padding:8px; margin-top:8px;">${listHtml}</div>` : `<div style="margin-top:6px;">${listHtml}</div>`}
+                </div>`;
+        }
+
+        // Saved per-drop lookup: fetch the recipient list from the DB for a past
+        // single drop (kind='drop') or bulk batch (kind='batch') and show it in a
+        // modal. Works long after the drop because the fan-out logs every
+        // recipient to admin_drop_notifications.
+        async function viewDropRecipients(kind, id) {
+            try {
+                const col = kind === 'batch' ? 'batch_id' : 'drop_id';
+                const { data, error } = await supabaseClient
+                    .from('admin_drop_notifications')
+                    .select('username, distance_miles, sent_at')
+                    .eq(col, id)
+                    .order('distance_miles', { ascending: true });
+                if (error) { adminToast('Could not load recipients: ' + error.message, 'error', 5000); return; }
+                showRecipientsModal(data || []);
+            } catch (e) {
+                console.warn('[admin-coins] viewDropRecipients failed', e);
+                adminToast('Could not load recipients — see console', 'error');
+            }
+        }
+
+        function showRecipientsModal(recipients) {
+            const root = _ensureAdminModalRoot();
+            const accent = '#00d4ff';
+            const rows = (recipients || []).length
+                ? recipients.map(r => `<div style="display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #111; font-size:13px; color:#ddd;"><span>@${esc(r.username || 'unknown')}</span><span style="color:#888; white-space:nowrap;">${(r.distance_miles != null) ? Number(r.distance_miles).toFixed(1) + ' mi' : ''}</span></div>`).join('')
+                : `<div style="color:#888; font-size:13px;">No recipients were recorded for this drop.</div>`;
+            root.innerHTML = `
+                <div class="admin-modal-overlay" style="position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); z-index:99999; display:flex; align-items:center; justify-content:center; padding:20px;">
+                    <div style="background:#0a0a0a; border:1px solid ${accent}; border-radius:16px; padding:26px; max-width:480px; width:100%; box-shadow:0 0 60px ${accent}40;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                            <h3 style="color:${accent}; font-size:18px; margin:0;">👥 Notified ${(recipients || []).length} ${(recipients || []).length === 1 ? 'person' : 'people'}</h3>
+                            <button id="recipientsModalClose" style="background:transparent; border:none; color:#888; cursor:pointer; font-size:20px;">×</button>
+                        </div>
+                        <div style="max-height:50vh; overflow-y:auto; background:#000; border:1px solid #111; border-radius:8px; padding:12px;">${rows}</div>
+                    </div>
+                </div>
+            `;
+            const cleanup = () => { root.innerHTML = ''; document.removeEventListener('keydown', onKey); };
+            const onKey = e => { if (e.key === 'Escape') cleanup(); };
+            document.addEventListener('keydown', onKey);
+            document.getElementById('recipientsModalClose').onclick = cleanup;
+            root.querySelector('.admin-modal-overlay').onclick = (e) => { if (e.target === e.currentTarget) cleanup(); };
         }
 
         function copyCoinCodesToClipboard() {
@@ -5802,6 +5918,7 @@ Use this only when:
                     notifCount,
                     notificationMessage,
                     notificationRadius,
+                    recipients: result.recipients || [],
                 });
                 adminToast('✅ Coin dropped successfully!', 'success');
 
@@ -5841,15 +5958,16 @@ Use this only when:
 
         // Inline success callout for the single-coin form. Shows coin_code in mono,
         // notification info, and a link to open in the Audit tab.
-        function showSingleCoinResultCallout({ coinCode, dropId, notifCount, notificationMessage, notificationRadius }) {
+        function showSingleCoinResultCallout({ coinCode, dropId, notifCount, notificationMessage, notificationRadius, recipients }) {
             const box = document.getElementById('singleDropResultCallout');
             if (!box) return;
-            let notifLine = '';
-            if (notifCount > 0) {
-                notifLine = `<div style="color:#888; font-size:12px; margin-top:6px;">📬 Sent ${notifCount} push notification${notifCount === 1 ? '' : 's'}.</div>`;
-            } else if (notificationMessage) {
-                notifLine = `<div style="color:#FF9800; font-size:12px; margin-top:6px;">⚠️ 0 notifications sent (no users with recent location within ${notificationRadius} mi).</div>`;
-            }
+            // Recipient count + "who" list (and a saved lookup keyed by drop id).
+            const notifLine = buildDropNotifSectionHtml(
+                { notificationsSent: notifCount, recipients: recipients || [] },
+                notificationMessage,
+                'drop',
+                dropId
+            );
             const codeBlock = coinCode
                 ? `<div style="margin-top:10px; padding:10px 12px; background:#000; border:1px solid #111; border-radius:6px; font-family:Menlo,Monaco,monospace; font-size:14px; color:#00d4ff; display:flex; justify-content:space-between; align-items:center;">
                        <span id="singleCoinCodeText">${esc(coinCode)}</span>
@@ -6805,6 +6923,9 @@ Use this only when:
                             <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0;">
                                 <button class="btn btn-info" onclick="event.stopPropagation(); openBatchDetail('${jsEsc(b.batch_id)}')" style="padding:9px 16px; font-size:12px; white-space:nowrap;">
                                     🔍 View Coins
+                                </button>
+                                <button class="btn btn-secondary" onclick="event.stopPropagation(); viewDropRecipients('batch','${jsEsc(b.batch_id)}')" style="padding:9px 16px; font-size:12px; white-space:nowrap;">
+                                    👥 Notified
                                 </button>
                                 <button class="btn btn-danger" onclick="event.stopPropagation(); deleteDropBatch('${jsEsc(b.batch_id)}', ${Number(b.coin_count)})" style="padding:9px 16px; font-size:12px; white-space:nowrap;">
                                     🗑️ Delete All
@@ -7796,6 +7917,7 @@ Use this only when:
                             <div style="color:#888; font-size:12px;">Created ${coin.created_at ? new Date(coin.created_at).toLocaleString() : '—'}</div>
                             ${coin.expires_at ? `<div style="color:#888; font-size:12px;">Expires ${new Date(coin.expires_at).toLocaleString()}</div>` : '<div style="color:#888; font-size:12px;">No expiry</div>'}
                             <div style="color:#888; font-size:12px;">Claims: <strong style="color:#fff;">${coin.views_count || 0}</strong>${coin.view_limit ? ` / ${coin.view_limit}` : ' (unlimited)'}</div>
+                            <button class="btn btn-secondary" onclick="viewDropRecipients('drop','${jsEsc(coin.id)}')" style="margin-top:8px; padding:6px 12px; font-size:11px;">👥 Who was notified</button>
                         </div>
                     </div>
                 </div>
