@@ -2148,6 +2148,7 @@
                             <th>Avatar</th>
                             <th>Username</th>
                             <th>Email</th>
+                            <th>Phone</th>
                             <th>Status</th>
                             <th>Last Active</th>
                             <th>Created</th>
@@ -2171,6 +2172,9 @@
                                         : ''}
                                 </td>
                                 <td>${user.email || 'N/A'}</td>
+                                <td>${user.phone_number
+                                    ? `${esc(user.phone_number)}${user.phone_verified ? ' <span style="color:#4CAF50;" title="Verified">✓</span>' : ' <span style="color:#FFC107;" title="Not verified">✗</span>'}`
+                                    : '<span style="color:#888;">—</span>'}</td>
                                 <td>
                                     ${user.deleted_at
                                         ? `<span class="badge" style="background: #9E9E9E; color: white;" title="Soft-deleted on ${new Date(user.deleted_at).toLocaleString()}">DELETED</span>`
@@ -2411,6 +2415,16 @@
                             </div>
                         </div>
                         <div>
+                            <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Phone</div>
+                            <div style="font-size: 14px; color: #ddd;">
+                                ${user.phone_number
+                                    ? `${esc(user.phone_number)} ${user.phone_verified
+                                        ? '<span style="color:#4CAF50;">✓ verified</span>'
+                                        : '<span style="color:#FFC107;">✗ not verified</span>'}`
+                                    : '<span style="color:#666;">no phone</span>'}
+                            </div>
+                        </div>
+                        <div>
                             <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Auth provider</div>
                             <div style="font-size: 14px; color: #ddd;">${esc(authMeta?.provider || 'email')}</div>
                         </div>
@@ -2464,6 +2478,7 @@
                             <button class="btn btn-info" onclick="promptDisplayNameChange('${user.id}', '${user.display_name || ''}')">Change Display Name</button>
                             <button class="btn btn-info" onclick="promptEmailChange('${user.id}', '${user.email || ''}', '${user.username}')">Change Email</button>
                             <button class="btn btn-info" onclick="resetUserPassword('${user.id}', '${user.username}', '${(user.email || '').replace(/'/g, "\\'")}')">Reset Password</button>
+                            ${user.phone_number ? `<button class="btn btn-warning" onclick="clearUserPhone('${user.id}', '${user.username}')">Remove Phone</button>` : ''}
                             <button class="btn btn-warning" onclick="deleteAllUserBlips('${user.id}', '${user.username}')">Delete All Blips</button>
                             <button class="btn btn-danger" onclick="deleteUser('${user.id}', '${user.username}')">Delete Account</button>
                         `}
@@ -2909,6 +2924,30 @@
             loadUsers();
             loadStats();
             closeUserDetail();
+        }
+
+        // Unlink a user's phone: clears the number from public.users, the
+        // auth.users phone field, AND deletes the phone login identity (so the
+        // number is fully freed to be added to a different account). Other
+        // login methods (email / Apple) are left intact. Runs server-side via
+        // the is_admin()-gated admin_clear_user_phone RPC.
+        async function clearUserPhone(userId, username) {
+            const ok = await adminConfirm({
+                title: `Remove phone from @${username}`,
+                message: `This unlinks the phone number from this account — clears it from the profile AND removes phone login — so the number is freed up to be added to a different account.
+
+Their email / Apple login is untouched, and you can always re-add a number later.`,
+                confirmLabel: 'Remove phone',
+            });
+            if (!ok) return;
+
+            const { error } = await supabaseClient.rpc('admin_clear_user_phone', { p_user_id: userId });
+            if (error) {
+                adminToast('Remove phone failed: ' + error.message, 'error');
+                return;
+            }
+            adminToast(`Phone removed from @${username}`, 'success');
+            openUserDetail(userId);
         }
 
         async function deleteUser(userId, username) {
