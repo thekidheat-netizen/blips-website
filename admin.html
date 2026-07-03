@@ -713,6 +713,7 @@
                 <div class="tabs">
                     <button class="tab active" onclick="showTab('users')">Users</button>
                     <button class="tab" onclick="showTab('blips')">Blips</button>
+                    <button class="tab" onclick="showTab('deleted')">Recently Deleted</button>
                     <button class="tab" onclick="showTab('reports')">Reports</button>
                     <button class="tab" onclick="showTab('appeals')">Appeals</button>
                     <button class="tab" onclick="showTab('verifications')">Verifications</button>
@@ -761,6 +762,19 @@
                         </div>
 
                         <div id="blipsSearchResults"></div>
+                    </div>
+
+                    <!-- Recently Deleted Tab -->
+                    <div id="deleted-tab" class="tab-content">
+                        <h2 style="margin-bottom: 6px;">🗑️ Recently Deleted</h2>
+                        <p style="color: #666; margin-bottom: 20px;">
+                            Soft-deleted blips still inside their retention window. Files + row are removed by the
+                            nightly purge run once the countdown hits zero (blips under an active report are held).
+                        </p>
+                        <div style="margin-bottom: 16px;">
+                            <button class="btn btn-secondary" onclick="loadDeletedBlips()">↻ Refresh</button>
+                        </div>
+                        <div id="deletedBlipsTable"><p style="color:#999;">Loading…</p></div>
                     </div>
 
                     <!-- Reports Tab -->
@@ -8011,6 +8025,80 @@ Use this only when:
                     }
                 }, 100);
             }
+
+            // Lazy-load the Recently Deleted list on first open (and refresh on
+            // every re-open — it's cheap and the countdowns should be current).
+            if (tab === 'deleted') {
+                loadDeletedBlips();
+            }
+        }
+
+        // ==================================================================
+        // RECENTLY DELETED TAB — global list via admin_list_soft_deleted_blips()
+        // with Restore / Purge tonight / +7 days actions (RPCs from migration
+        // 20260703000000_admin_soft_delete_actions.sql).
+        // ==================================================================
+        async function loadDeletedBlips() {
+            const host = document.getElementById('deletedBlipsTable');
+            host.innerHTML = '<p style="color:#999;">Loading…</p>';
+            try {
+                const { data, error } = await supabaseClient.rpc('admin_list_soft_deleted_blips', { p_limit: 200 });
+                if (error) throw error;
+                const rows = data || [];
+                if (rows.length === 0) {
+                    host.innerHTML = '<p style="color:#999;">Nothing in the trash — no soft-deleted blips right now. 🎉</p>';
+                    return;
+                }
+                host.innerHTML = `
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                        ${rows.map(b => `
+                            <div style="display:flex; align-items:center; gap:14px; background:#FFF; border:1px solid #E8E8E8; border-radius:12px; padding:12px 16px;">
+                                ${b.thumbnail_url
+                                    ? `<img src="${esc(b.thumbnail_url)}" style="width:56px; height:56px; border-radius:8px; object-fit:cover; background:#EEE;">`
+                                    : `<div style="width:56px; height:56px; border-radius:8px; background:#EEE; display:flex; align-items:center; justify-content:center;">🎬</div>`}
+                                <div style="flex:1; min-width:0;">
+                                    <div style="font-weight:600;">@${esc(b.username || 'unknown')}
+                                        ${b.has_active_report ? '<span style="background:#FDECEA; color:#B3261E; font-size:11px; padding:2px 8px; border-radius:8px; margin-left:6px;">⚠ report hold</span>' : ''}
+                                    </div>
+                                    <div style="color:#666; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(b.caption || '(no caption)')}</div>
+                                    <div style="color:#999; font-size:12px;">deleted ${formatRelative(b.soft_deleted_at)} · purges ${b.has_active_report ? 'held while reported' : formatUntil(b.purge_after)}</div>
+                                </div>
+                                <div style="display:flex; gap:8px; flex-shrink:0;">
+                                    <button class="btn btn-secondary" style="padding:7px 12px; font-size:13px;" onclick="restoreDeletedBlip('${b.id}')">♻️ Restore</button>
+                                    <button class="btn btn-secondary" style="padding:7px 12px; font-size:13px;" onclick="extendDeletedBlip('${b.id}')">+7 days</button>
+                                    <button class="btn btn-danger" style="padding:7px 12px; font-size:13px;" onclick="purgeDeletedBlipNow('${b.id}')">Purge tonight</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>`;
+            } catch (e) {
+                console.error('loadDeletedBlips failed:', e);
+                host.innerHTML = `<p style="color:#B3261E;">Failed to load: ${esc(e.message || String(e))}<br>
+                    <span style="color:#999; font-size:12px;">If this says the function does not exist, apply migration 20260703000000_admin_soft_delete_actions.sql (and 20260519000002) in the SQL editor.</span></p>`;
+            }
+        }
+
+        async function restoreDeletedBlip(blipId) {
+            if (!confirm('Restore this blip? It will reappear on the map and the owner\'s profile.')) return;
+            const { data, error } = await supabaseClient.rpc('admin_restore_blip', { p_blip_id: blipId });
+            if (error) { alert('Restore failed: ' + error.message); return; }
+            if (!data) { alert('Nothing restored — the blip may already be purged.'); }
+            loadDeletedBlips();
+        }
+
+        async function purgeDeletedBlipNow(blipId) {
+            if (!confirm('Purge this blip on tonight\'s run? The video files and all data will be permanently deleted. This cannot be undone.')) return;
+            const { data, error } = await supabaseClient.rpc('admin_purge_blip_now', { p_blip_id: blipId });
+            if (error) { alert('Purge scheduling failed: ' + error.message); return; }
+            if (!data) { alert('Nothing changed — the blip may already be purged.'); }
+            loadDeletedBlips();
+        }
+
+        async function extendDeletedBlip(blipId) {
+            const { data, error } = await supabaseClient.rpc('admin_extend_blip_retention', { p_blip_id: blipId, p_days: 7 });
+            if (error) { alert('Extend failed: ' + error.message); return; }
+            if (!data) { alert('Nothing changed — the blip may already be purged.'); }
+            loadDeletedBlips();
         }
 
         // ==================================================================
