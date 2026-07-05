@@ -58,19 +58,21 @@
 
     <div class="legal-content">
         <h1>Privacy Policy</h1>
-        <p class="date">Last updated: May 24, 2026</p>
+        <p class="date">Last updated: July 5, 2026</p>
 
         <p>Blips Digital ("Blips," "we," "us," or "our") operates the Blips mobile application (the "App"). This Privacy Policy explains what information we collect, how we use it, and the choices you have.</p>
 
         <h2>1. Information We Collect</h2>
         <p>We collect the following categories of information when you use Blips:</p>
         <ul>
-            <li><strong>Account information:</strong> Email address, username, display name, password (hashed), and date of birth (used for age verification only).</li>
+            <li><strong>Account information:</strong> Email address, username, display name, and password (hashed). We do not collect your date of birth — at signup you confirm that you are at least 13 years old.</li>
             <li><strong>Profile information:</strong> Profile photo, bio, city/location, and any other profile fields you choose to fill in.</li>
             <li><strong>Phone number (optional):</strong> If you choose to add and verify your phone number, we store it so other users who have your number in their contacts can find you on Blips. We never display your phone number publicly. See Section 5 for SMS-specific terms.</li>
-            <li><strong>Content:</strong> Videos, photos, comments, replies, and other content you create or upload — including the geographic coordinates of where each "blip" was dropped.</li>
+            <li><strong>Content:</strong> Videos, photos, comments, replies, voice messages, and other content you create or upload — including the geographic coordinates of where each "blip" was dropped and, if you choose to tag one, the name and address of the place where you dropped it.</li>
             <li><strong>Location data:</strong> Your device's GPS location, used to determine which nearby content to show you and to verify proximity when you view a location-based blip. Location is collected only while the app is in use; we do not track location in the background.</li>
             <li><strong>Contacts (optional):</strong> If you grant permission, we read the phone numbers in your device contacts solely to find which of those people are already on Blips. Phone numbers are hashed (SHA-256) on your device before being sent to our servers; we never receive or store the plaintext contact list, contact names, or contact emails.</li>
+            <li><strong>Identity verification (optional):</strong> If you apply for a verified badge, we collect a photo of your government-issued ID. It is stored in a private, access-restricted location, is viewable only by our review team, is used solely to confirm your identity for the badge, and is <strong>automatically deleted within 30 days</strong> of submission.</li>
+            <li><strong>Screenshot and screen-recording detection:</strong> To protect creators, protected content in Blips is excluded from screenshots and screen recordings. When the device reports that a screenshot or recording of protected content was attempted, we may record that event and notify the content's owner.</li>
             <li><strong>Usage data:</strong> How you interact with the app — which screens you visit, which blips you view, which actions you take. Used for product improvement and abuse prevention.</li>
             <li><strong>Device information:</strong> Device model, operating system version, app version, language, and a push notification token if you grant notification permission.</li>
             <li><strong>Crash and diagnostic data:</strong> Stack traces and device state if the app crashes, sent to our error reporting service.</li>
@@ -83,6 +85,7 @@
             <li>Show you content near your current location, including blips, announcements, and admin drops.</li>
             <li>Let you communicate with other users via comments, video replies, and direct messages.</li>
             <li>Verify your identity when you add a phone number, so friends can find you and you can find them.</li>
+            <li>Review verified-badge applications and display verification status on profiles.</li>
             <li>Send you push notifications about activity relevant to your account (likes, comments, friend requests, nearby drops). You control this in your device's notification settings.</li>
             <li>Protect against spam, fraud, abuse, and violations of our Terms of Service.</li>
             <li>Improve the App through aggregated, non-identifying analytics.</li>
@@ -107,6 +110,7 @@
             <li><strong>Apple Push Notification service / Expo</strong> — delivery of push notifications to your device.</li>
             <li><strong>Sentry</strong> — crash reporting and error monitoring.</li>
             <li><strong>Apple Sign-In</strong> — if you choose to sign in with Apple, Apple shares only the information you authorize.</li>
+            <li><strong>Google Sign-In</strong> — if you choose to sign in with Google, Google shares only the information you authorize.</li>
             <li><strong>Vercel</strong> — hosts this website.</li>
         </ul>
 
@@ -127,17 +131,18 @@
             <li><strong>Revoke permissions:</strong> Turn off Location, Contacts, Camera, Microphone, Photos, and Notifications at any time in your device's iOS Settings → Blips.</li>
             <li><strong>Remove your phone number:</strong> In App Settings → Phone Number, you can remove it at any time. Once removed, your number will no longer be discoverable by friends through contact matching.</li>
             <li><strong>Delete your account:</strong> App Settings → Account Actions → Delete Account. Your account is soft-deleted immediately — your content and profile become invisible to other users in the App right away. We retain a minimal record (account ID and deletion timestamp) for moderation review for a reasonable period before final deletion.</li>
-            <li><strong>Access or export:</strong> Email <strong>privacy@blipsdigital.com</strong> with the email associated with your account to request a copy of your data.</li>
+            <li><strong>Access or export:</strong> Use App Settings → Download My Data to export a copy of your data directly from the App at any time, or email <strong>privacy@blipsdigital.com</strong> from the email associated with your account.</li>
         </ul>
 
         <h2>7. Data Retention</h2>
         <p>We retain your information for as long as your account is active. After you delete your account, your data is hidden from other users immediately and is permanently removed from active systems within a reasonable period, except where we are required to retain it for legal, security, or fraud-prevention purposes.</p>
+        <p>Specific retention windows: content you delete (such as a blip) is hidden immediately and enters a short retention window — so we can act on any pending abuse reports — before its files are permanently removed from storage on a scheduled nightly purge. Government-ID images submitted for verification are automatically deleted within 30 days of submission regardless of the review outcome.</p>
 
         <h2>8. Data Security</h2>
         <p>We implement industry-standard security measures including TLS encryption in transit, encrypted backups, and database row-level security policies that restrict who can read each piece of data. Phone numbers used for friend matching are hashed locally on your device before transmission. No system is 100% secure; we encourage you to use a strong, unique password and to enable two-factor authentication on your email account.</p>
 
         <h2>9. Children's Privacy</h2>
-        <p>Blips is not intended for users under 13 years of age, and we do not knowingly collect personal information from children under 13. We use an age-verification step at signup to enforce this. If you believe a child under 13 has created an account, please email <strong>privacy@blipsdigital.com</strong> and we will delete the account.</p>
+        <p>Blips is not intended for users under 13 years of age, and we do not knowingly collect personal information from children under 13. Signup requires confirming that you are at least 13 years old. If you believe a child under 13 has created an account, please email <strong>privacy@blipsdigital.com</strong> and we will delete the account.</p>
 
         <h2>10. International Users</h2>
         <p>Blips is operated from the United States. If you access the App from outside the US, you understand that your information will be transferred to and processed in the US, where data protection laws may differ from those in your country.</p>
@@ -158,7 +163,7 @@
             <div class="footer-content">
                 <div class="footer-brand">
                     <h3>Blips</h3>
-                    <p>Share your moments</p>
+                    <p>Memories that live where you lived them</p>
                 </div>
                 <div class="footer-links">
                     <h4>Legal</h4>
@@ -171,7 +176,7 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2025 Blips. All rights reserved.</p>
+                <p>&copy; 2026 Blips Digital Inc. All rights reserved.</p>
             </div>
         </div>
     </footer>
