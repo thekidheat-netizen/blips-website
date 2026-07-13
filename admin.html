@@ -1845,7 +1845,7 @@
 
                 console.log('Sign in response:', { data, error });
                 if (error) {
-                    alert('Login failed: ' + error.message);
+                    adminToast('Login failed: ' + error.message, 'error', 5000);
                     return;
                 }
 
@@ -1859,13 +1859,13 @@
 
                 console.log('User data:', { user, userError });
                 if (userError) {
-                    alert('Error checking admin status: ' + userError.message);
+                    adminToast('Error checking admin status: ' + userError.message, 'error', 5000);
                     await supabaseClient.auth.signOut();
                     return;
                 }
 
                 if (!user?.is_admin) {
-                    alert('Access denied. Admin privileges required.');
+                    adminToast('Access denied. Admin privileges required.', 'error', 5000);
                     await supabaseClient.auth.signOut();
                     return;
                 }
@@ -1876,7 +1876,7 @@
                 loadDashboard();
             } catch (err) {
                 console.error('Login error:', err);
-                alert('Login failed: ' + err.message);
+                adminToast('Login failed: ' + err.message, 'error', 5000);
             }
         }
 
@@ -1953,71 +1953,44 @@
         }
 
         async function loadStats() {
-            // Count on 'id' (not '*') — a select('*') count trips on the
-            // PII columns REVOKE'd from authenticated and returns 0.
-            const { count: userCount } = await supabaseClient
-                .from('users')
-                .select('id', { count: 'exact', head: true });
-
-            const { count: blipCount } = await supabaseClient
-                .from('blips')
-                .select('*', { count: 'exact', head: true });
-
-            const { count: bannedCount } = await supabaseClient
-                .from('users')
-                .select('id', { count: 'exact', head: true })
-                .eq('is_banned', true);
-
-            // Soft-deleted users — exposed by migration 20260422000001.
-            // delete_user_completely sets deleted_at + is_banned, so this
-            // count is a SUBSET of bannedCount above. We still surface it
-            // separately because the workflows differ: banned users may be
-            // unbanned, but soft-deleted users need an explicit restore
-            // (which also clears deleted_at and may restore the username).
-            const { count: deletedCount } = await supabaseClient
-                .from('users')
-                .select('id', { count: 'exact', head: true })
-                .not('deleted_at', 'is', null);
-
-            // Pending reports across ALL report types (blip, announcement,
-            // comment, profile, video reply) — previously only blip +
-            // announcement were counted, so the tile undercounted.
-            const { count: blipPendingCount } = await supabaseClient
-                .from('blip_reports')
-                .select('*', { count: 'exact', head: true })
-                .eq('status', 'pending');
-
-            const { count: announcementPendingCount } = await supabaseClient
-                .from('announcement_reports')
-                .select('*', { count: 'exact', head: true })
-                .eq('status', 'pending');
-
-            const { count: commentPendingCount } = await supabaseClient
-                .from('blip_comment_reports')
-                .select('*', { count: 'exact', head: true })
-                .eq('status', 'pending');
-
-            // profile_reports also holds ban "appeals" (report_type='appeal'),
-            // which live in the Appeals tab, not Reports — exclude them so the
-            // count matches what the Reports tab shows.
-            const { count: profilePendingCount } = await supabaseClient
-                .from('profile_reports')
-                .select('*', { count: 'exact', head: true })
-                .eq('status', 'pending')
-                .neq('report_type', 'appeal');
-
-            const { count: videoReplyPendingCount } = await supabaseClient
-                .from('video_reply_reports')
-                .select('*', { count: 'exact', head: true })
-                .eq('status', 'pending');
+            // All nine counts are independent — run them in ONE parallel
+            // round-trip burst instead of nine sequential awaits (this
+            // function re-runs after every ban/delete/report action, so
+            // the serial version made every admin action feel slow).
+            // Count on 'id' (not '*') for users — a select('*') count trips
+            // on the PII columns REVOKE'd from authenticated and returns 0.
+            const [
+                { count: userCount },
+                { count: blipCount },
+                { count: bannedCount },
+                // Soft-deleted users — exposed by migration 20260422000001.
+                // A SUBSET of bannedCount, surfaced separately because the
+                // workflows differ (unban vs explicit restore).
+                { count: deletedCount },
+                // Pending reports across ALL report types.
+                { count: blipPendingCount },
+                { count: announcementPendingCount },
+                { count: commentPendingCount },
+                // profile_reports also holds ban "appeals" — excluded so the
+                // count matches the Reports tab.
+                { count: profilePendingCount },
+                { count: videoReplyPendingCount },
+                { count: pendingVerifications },
+            ] = await Promise.all([
+                supabaseClient.from('users').select('id', { count: 'exact', head: true }),
+                supabaseClient.from('blips').select('*', { count: 'exact', head: true }),
+                supabaseClient.from('users').select('id', { count: 'exact', head: true }).eq('is_banned', true),
+                supabaseClient.from('users').select('id', { count: 'exact', head: true }).not('deleted_at', 'is', null),
+                supabaseClient.from('blip_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+                supabaseClient.from('announcement_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+                supabaseClient.from('blip_comment_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+                supabaseClient.from('profile_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending').neq('report_type', 'appeal'),
+                supabaseClient.from('video_reply_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+                supabaseClient.from('verification_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+            ]);
 
             const pendingCount = (blipPendingCount || 0) + (announcementPendingCount || 0)
                 + (commentPendingCount || 0) + (profilePendingCount || 0) + (videoReplyPendingCount || 0);
-
-            const { count: pendingVerifications } = await supabaseClient
-                .from('verification_applications')
-                .select('*', { count: 'exact', head: true })
-                .eq('status', 'pending');
 
             document.getElementById('totalUsers').textContent = userCount || 0;
             document.getElementById('totalBlips').textContent = blipCount || 0;
@@ -2040,6 +2013,10 @@
                 state.cursor = null;
                 state.exhausted = false;
                 allUsers = [];
+                // Loading state — the table was previously just blank until
+                // the first page landed.
+                document.getElementById('usersTable').innerHTML =
+                    '<div class="no-results" style="color:#9C8F80;">Loading\u2026</div>';
             }
 
             // Use the admin_list_users RPC instead of a direct select('*').
@@ -2284,47 +2261,49 @@
 
             if (!user) return;
 
-            // Get user stats
-            const { count: followersCount } = await supabaseClient
-                .from('followers')
-                .select('*', { count: 'exact', head: true })
-                .eq('following_id', userId);
+            // Everything below is independent of everything else (only
+            // videoRepliesReceived needs the blip IDs) — run it all in one
+            // parallel burst instead of ~9 sequential awaits. This is what
+            // made opening a user feel slow.
+            const [
+                { count: followersCount },
+                { count: followingCount },
+                { data: userBlips },
+                { data: videoReplies },
+                { data: adminLogs },
+                { count: warningCount },
+                { data: userWarnings },
+                authMeta,
+            ] = await Promise.all([
+                supabaseClient.from('followers').select('*', { count: 'exact', head: true }).eq('following_id', userId),
+                supabaseClient.from('followers').select('*', { count: 'exact', head: true }).eq('follower_id', userId),
+                // Admin session is exempt from hide-soft-deleted RLS, so this
+                // includes soft-deleted blips — split into live/deleted below.
+                supabaseClient.from('blips').select('*').eq('user_id', userId)
+                    .order('created_at', { ascending: false }).limit(500),
+                supabaseClient.from('video_replies').select(`
+                        *,
+                        replier:users!video_replies_replied_by_fkey(id, username, avatar_url),
+                        original_blip:blips!video_replies_blip_id_fkey(id, thumbnail_url, user_id, users(username))
+                    `).eq('replied_by', userId).order('created_at', { ascending: false }),
+                supabaseClient.from('admin_logs').select('*, admin:users!admin_logs_admin_id_fkey(username)')
+                    .eq('target_user_id', userId).order('created_at', { ascending: false }).limit(20),
+                supabaseClient.from('user_warnings').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+                supabaseClient.from('user_warnings').select('id, category, title, reason, created_at, expires_at')
+                    .eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
+                // Auth metadata via admin-only RPC (migration 20260516000014).
+                // Falls back to null silently if the RPC isn't available yet.
+                supabaseClient.rpc('admin_get_user_auth_meta', { p_user_id: userId })
+                    .then(({ data }) => data || null)
+                    .catch((e) => { console.warn('admin_get_user_auth_meta unavailable:', e); return null; }),
+            ]);
 
-            const { count: followingCount } = await supabaseClient
-                .from('followers')
-                .select('*', { count: 'exact', head: true })
-                .eq('follower_id', userId);
-
-            const { data: userBlips } = await supabaseClient
-                .from('blips')
-                .select('*')
-                .eq('user_id', userId)
-                .order('created_at', { ascending: false });
-
-            // The admin session is exempt from the hide-soft-deleted RLS, so
-            // userBlips includes soft-deleted blips. Split them: live blips go
-            // in "User's Blips"; soft-deleted ones get their own "Recently
-            // Deleted" section below (with deleted-ago + purge countdown).
-            // Previously they were mixed together and shown as if still live.
             const liveBlips = (userBlips || []).filter(b => !b.soft_deleted_at);
             const deletedBlips = (userBlips || []).filter(b => b.soft_deleted_at);
 
-            // Get video replies sent by this user
-            const { data: videoReplies } = await supabaseClient
-                .from('video_replies')
-                .select(`
-                    *,
-                    replier:users!video_replies_replied_by_fkey(id, username, avatar_url),
-                    original_blip:blips!video_replies_blip_id_fkey(id, thumbnail_url, user_id, users(username))
-                `)
-                .eq('replied_by', userId)
-                .order('created_at', { ascending: false});
-
-            // Get video replies received by this user (replies to their blips)
-            // Use the user's blip IDs from the already-fetched userBlips
+            // Video replies received (replies to their blips) — needs the
+            // blip IDs from above, so it stays a second phase.
             const userBlipIds = userBlips?.map(b => b.id) || [];
-
-            // Then get video replies to those blips
             const { data: videoRepliesReceived } = userBlipIds.length > 0
                 ? await supabaseClient
                     .from('video_replies')
@@ -2337,45 +2316,11 @@
                     .order('created_at', { ascending: false})
                 : { data: [] };
 
-            // Get admin action history
-            const { data: adminLogs } = await supabaseClient
-                .from('admin_logs')
-                .select('*, admin:users!admin_logs_admin_id_fkey(username)')
-                .eq('target_user_id', userId)
-                .order('created_at', { ascending: false })
-                .limit(20);
-
-            // Running warning count (shown on the card + drives escalation).
-            const { count: warningCount } = await supabaseClient
-                .from('user_warnings')
-                .select('id', { count: 'exact', head: true })
-                .eq('user_id', userId);
-
-            // The warnings themselves, so an admin can revoke one given in error.
-            const { data: userWarnings } = await supabaseClient
-                .from('user_warnings')
-                .select('id, category, title, reason, created_at, expires_at')
-                .eq('user_id', userId)
-                .order('created_at', { ascending: false })
-                .limit(20);
-
-            // Get auth metadata via the admin-only RPC (migration
-            // 20260516000014). last_sign_in_at lives in auth.users which
-            // PostgREST can't read directly. Falls back to null silently
-            // if the RPC isn't available yet.
-            let authMeta = null;
-            try {
-                const { data: am } = await supabaseClient.rpc('admin_get_user_auth_meta', { p_user_id: userId });
-                authMeta = am || null;
-            } catch (e) {
-                console.warn('admin_get_user_auth_meta unavailable:', e);
-            }
-
             const html = `
                 <div class="user-detail-header">
                     ${user.avatar_url
                         ? `<img src="${user.avatar_url}" class="user-detail-avatar">`
-                        : `<div class="user-detail-avatar" style="background: #261E18; color: #F2E9DA; color: #C2902F; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: bold;">${user.username?.charAt(0).toUpperCase() || '?'}</div>`
+                        : `<div class="user-detail-avatar" style="background: #261E18; color: #C2902F; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: bold;">${user.username?.charAt(0).toUpperCase() || '?'}</div>`
                     }
                     <div class="user-detail-info">
                         <h2>${user.display_name || user.username || 'N/A'}</h2>
@@ -2883,7 +2828,7 @@
 
             if (error) {
                 console.error('Error logging admin action:', error);
-                alert('Warning: Action completed but logging failed: ' + error.message);
+                adminToast('Action completed but logging failed: ' + error.message, 'error', 5000);
             } else {
                 console.log('Admin action logged successfully:', data);
             }
@@ -3275,18 +3220,25 @@ Use this only when:
                 .eq('user_id', userId);
 
             if (fetchErr) {
-                alert('Error fetching blips: ' + fetchErr.message);
+                adminToast('Error fetching blips: ' + fetchErr.message, 'error', 5000);
                 return;
             }
 
             const blipIds = (rows || []).map(r => r.id);
             let failures = 0;
-            for (const blipId of blipIds) {
-                const { error } = await supabaseClient
-                    .rpc('admin_delete_blip', { p_blip_id: blipId });
-                if (error) {
-                    console.error('Failed to delete blip', blipId, error);
-                    failures++;
+            // Parallel chunks of 10 (was one serial RPC per blip — 300 blips
+            // meant 300 sequential round-trips with the UI frozen silent).
+            for (let i = 0; i < blipIds.length; i += 10) {
+                const chunk = blipIds.slice(i, i + 10);
+                const results = await Promise.all(chunk.map(blipId =>
+                    supabaseClient.rpc('admin_delete_blip', { p_blip_id: blipId })
+                        .then(({ error }) => ({ blipId, error }))
+                ));
+                for (const { blipId, error } of results) {
+                    if (error) { console.error('Failed to delete blip', blipId, error); failures++; }
+                }
+                if (blipIds.length > 20) {
+                    adminToast(`Deleting… ${Math.min(i + 10, blipIds.length)}/${blipIds.length}`, 'info', 900);
                 }
             }
 
@@ -3434,120 +3386,97 @@ Use this only when:
         let reportsLimit = PAGE_SIZE;
 
         async function loadReports() {
-            const { data: blipReports } = await supabaseClient
-                .from('blip_reports')
-                .select(`
-                    *,
-                    blips(id, video_url, thumbnail_url, user_id, title, description, latitude, longitude, views_count, created_at, is_public),
-                    users!blip_reports_reported_by_fkey(username),
-                    blip_owner:users!blip_reports_blip_owner_id_fkey(id, username)
-                `)
-                .order('created_at', { ascending: false })
-                .limit(reportsLimit);
-
-            // Load announcement reports (new 24-hour stories)
-            const { data: announcementReports } = await supabaseClient
-                .from('announcement_reports')
-                .select(`
-                    *,
-                    announcements(id, video_url, thumbnail_url, user_id, created_at, views_count, latitude, longitude, deleted_at, deleted_by, announcement_owner:users!announcements_user_id_fkey(id, username)),
-                    reporter:users!announcement_reports_reporter_id_fkey(username)
-                `)
-                .order('created_at', { ascending: false })
-                .limit(reportsLimit);
-
-            const { data: profileReports } = await supabaseClient
-                .from('profile_reports')
-                .select(`
-                    *,
-                    reported_user:users!profile_reports_reported_user_id_fkey(id, username, avatar_url),
-                    reporter:users!profile_reports_reported_by_fkey(username)
-                `)
-                .neq('report_type', 'appeal') // Exclude appeals from reports
-                .order('created_at', { ascending: false })
-                .limit(reportsLimit);
-
-            // Load video reply reports
-            const { data: videoReplyReports, error: videoReplyError } = await supabaseClient
-                .from('video_reply_reports')
-                .select(`
-                    *,
-                    video_reply:video_replies(
-                        id,
-                        video_url,
-                        thumbnail_url,
-                        replied_by,
-                        blip_id,
-                        location_lat,
-                        location_lon,
-                        created_at,
-                        replier:users!video_replies_replied_by_fkey(id, username),
-                        blip:blips(
-                            id,
-                            user_id,
-                            title,
-                            blip_owner:users!blips_user_id_fkey(id, username)
+            document.getElementById('reportsTable').innerHTML =
+                '<div class="no-results" style="color:#9C8F80;">Loading\u2026</div>';
+            // The five report-table queries are independent — fire them in
+            // parallel (previously sequential; this tab reloads on every
+            // status change and realtime event, so it was the slowest page).
+            const [
+                { data: blipReports },
+                { data: announcementReports },
+                { data: profileReports },
+                { data: videoReplyReports, error: videoReplyError },
+                { data: commentReports, error: commentReportError },
+            ] = await Promise.all([
+                supabaseClient
+                    .from('blip_reports')
+                    .select(`
+                        *,
+                        blips(id, video_url, thumbnail_url, user_id, title, description, latitude, longitude, views_count, created_at, is_public),
+                        users!blip_reports_reported_by_fkey(username),
+                        blip_owner:users!blip_reports_blip_owner_id_fkey(id, username)
+                    `)
+                    .order('created_at', { ascending: false })
+                    .limit(reportsLimit),
+                supabaseClient
+                    .from('announcement_reports')
+                    .select(`
+                        *,
+                        announcements(id, video_url, thumbnail_url, user_id, created_at, views_count, latitude, longitude, deleted_at, deleted_by, announcement_owner:users!announcements_user_id_fkey(id, username)),
+                        reporter:users!announcement_reports_reporter_id_fkey(username)
+                    `)
+                    .order('created_at', { ascending: false })
+                    .limit(reportsLimit),
+                supabaseClient
+                    .from('profile_reports')
+                    .select(`
+                        *,
+                        reported_user:users!profile_reports_reported_user_id_fkey(id, username, avatar_url),
+                        reporter:users!profile_reports_reported_by_fkey(username)
+                    `)
+                    .neq('report_type', 'appeal') // Exclude appeals from reports
+                    .order('created_at', { ascending: false })
+                    .limit(reportsLimit),
+                supabaseClient
+                    .from('video_reply_reports')
+                    .select(`
+                        *,
+                        video_reply:video_replies(
+                            id, video_url, thumbnail_url, replied_by, blip_id,
+                            location_lat, location_lon, created_at,
+                            replier:users!video_replies_replied_by_fkey(id, username),
+                            blip:blips(
+                                id, user_id, title,
+                                blip_owner:users!blips_user_id_fkey(id, username)
+                            )
                         )
-                    )
-                `)
-                .order('created_at', { ascending: false })
-                .limit(reportsLimit);
+                    `)
+                    .order('created_at', { ascending: false })
+                    .limit(reportsLimit),
+                supabaseClient
+                    .from('blip_comment_reports')
+                    .select(`
+                        *,
+                        comment:blip_comments(
+                            id, content, user_id, blip_id, created_at,
+                            commenter:users!blip_comments_user_id_fkey(id, username)
+                        )
+                    `)
+                    .order('created_at', { ascending: false })
+                    .limit(reportsLimit),
+            ]);
 
-            // Fetch reporter usernames separately (no foreign key exists)
-            if (videoReplyReports && videoReplyReports.length > 0) {
-                const reporterIds = [...new Set(videoReplyReports.map(r => r.reported_by))];
-                const { data: reporters } = await supabaseClient
-                    .from('users')
-                    .select('id, username')
-                    .in('id', reporterIds);
+            if (videoReplyError) console.error('Error loading video reply reports:', videoReplyError);
+            if (commentReportError) console.error('Error loading comment reports:', commentReportError);
 
-                // Map reporter data to reports
-                if (reporters) {
-                    const reporterMap = Object.fromEntries(reporters.map(u => [u.id, u]));
-                    videoReplyReports.forEach(report => {
-                        report.reporter = reporterMap[report.reported_by];
-                    });
-                }
-            }
-
-            if (videoReplyError) {
-                console.error('Error loading video reply reports:', videoReplyError);
-            }
-            console.log('Video reply reports loaded:', videoReplyReports);
-
-            // Load comment reports. The comment author is joinable
-            // (blip_comments.user_id → users), but the reporter is not
-            // (reported_by → auth.users, no public.users FK), so — like video
-            // reply reports — we fetch reporter usernames separately.
-            const { data: commentReports, error: commentReportError } = await supabaseClient
-                .from('blip_comment_reports')
-                .select(`
-                    *,
-                    comment:blip_comments(
-                        id, content, user_id, blip_id, created_at,
-                        commenter:users!blip_comments_user_id_fkey(id, username)
-                    )
-                `)
-                .order('created_at', { ascending: false })
-                .limit(reportsLimit);
-
-            if (commentReportError) {
-                console.error('Error loading comment reports:', commentReportError);
-            }
-
-            if (commentReports && commentReports.length > 0) {
-                const reporterIds = [...new Set(commentReports.map(r => r.reported_by))];
+            // Reporter usernames for video-reply + comment reports aren't
+            // joinable (reported_by -> auth.users, no public FK) — fetch both
+            // username maps in one parallel pass.
+            const attachReporters = async (reports) => {
+                if (!reports || reports.length === 0) return;
+                const reporterIds = [...new Set(reports.map(r => r.reported_by))];
                 const { data: reporters } = await supabaseClient
                     .from('users')
                     .select('id, username')
                     .in('id', reporterIds);
                 if (reporters) {
                     const reporterMap = Object.fromEntries(reporters.map(u => [u.id, u]));
-                    commentReports.forEach(report => {
+                    reports.forEach(report => {
                         report.reporter = reporterMap[report.reported_by];
                     });
                 }
-            }
+            };
+            await Promise.all([attachReporters(videoReplyReports), attachReporters(commentReports)]);
 
             allReports = [
                 ...(blipReports || []).map(r => ({ ...r, reportType: 'blip' })),
@@ -3765,11 +3694,11 @@ Use this only when:
                 .eq('id', reportId);
 
             if (error) {
-                alert('Error: ' + error.message);
+                adminToast('Error: ' + error.message, 'error', 5000);
                 return;
             }
 
-            alert(`Report status updated to: ${status}`);
+            adminToast(`Report status updated to: ${status}`, 'success');
             loadReports();
             loadStats();
         }
@@ -3788,6 +3717,8 @@ Use this only when:
 
         let appealsLimit = PAGE_SIZE;
         async function loadAppeals() {
+            document.getElementById('appealsTable').innerHTML =
+                '<div class="no-results" style="color:#9C8F80;">Loading\u2026</div>';
             const { data: appeals } = await supabaseClient
                 .from('profile_reports')
                 .select(`
@@ -3939,7 +3870,12 @@ Use this only when:
         }
 
         async function approveAppeal(appealId, userId, username) {
-            const notes = prompt(`Notes for approving appeal for @${username}:`);
+            const notes = await adminPrompt({
+                title: 'Approve appeal',
+                message: `Notes for approving appeal for @${username}:`,
+                placeholder: 'Why is this appeal being approved?',
+                multiline: true
+            });
             if (!notes) return;
 
             // Unban the user and clear ban reason
@@ -3952,7 +3888,7 @@ Use this only when:
                 .eq('id', userId);
 
             if (unbanError) {
-                alert('Error unbanning user: ' + unbanError.message);
+                adminToast('Error unbanning user: ' + unbanError.message, 'error', 5000);
                 return;
             }
 
@@ -3963,20 +3899,26 @@ Use this only when:
                 .eq('id', appealId);
 
             if (appealError) {
-                alert('Error updating appeal: ' + appealError.message);
+                adminToast('Error updating appeal: ' + appealError.message, 'error', 5000);
                 return;
             }
 
             // Log the action
             await logAdminAction('unban', userId, { appeal_approved: true }, `Appeal approved: ${notes}`);
 
-            alert(`Appeal approved! @${username} has been unbanned.`);
+            adminToast(`Appeal approved — @${username} has been unbanned.`, 'success');
             loadAppeals();
             loadStats();
         }
 
         async function denyAppeal(appealId, username) {
-            const notes = prompt(`Notes for denying appeal for @${username}:`);
+            const notes = await adminPrompt({
+                title: 'Deny appeal',
+                message: `Notes for denying appeal for @${username}:`,
+                placeholder: 'Why is this appeal being denied?',
+                multiline: true,
+                dangerLevel: 'warning'
+            });
             if (!notes) return;
 
             const { error } = await supabaseClient
@@ -3985,11 +3927,11 @@ Use this only when:
                 .eq('id', appealId);
 
             if (error) {
-                alert('Error: ' + error.message);
+                adminToast('Error: ' + error.message, 'error', 5000);
                 return;
             }
 
-            alert(`Appeal denied for @${username}`);
+            adminToast(`Appeal denied for @${username}`, 'success');
             loadAppeals();
         }
 
@@ -4000,11 +3942,11 @@ Use this only when:
                 .eq('id', appealId);
 
             if (error) {
-                alert('Error: ' + error.message);
+                adminToast('Error: ' + error.message, 'error', 5000);
                 return;
             }
 
-            alert('Appeal marked as reviewed');
+            adminToast('Appeal marked as reviewed', 'success');
             loadAppeals();
         }
 
@@ -4019,11 +3961,11 @@ Use this only when:
                 .eq('id', appealId);
 
             if (error) {
-                alert('Error: ' + error.message);
+                adminToast('Error: ' + error.message, 'error', 5000);
                 return;
             }
 
-            alert(`Appeal status updated to: ${status}`);
+            adminToast(`Appeal status updated to: ${status}`, 'success');
             loadAppeals();
         }
 
@@ -4036,7 +3978,7 @@ Use this only when:
                 .single();
 
             if (error || !blip) {
-                alert('Error loading blip: ' + (error?.message || 'Blip not found'));
+                adminToast('Error loading blip: ' + (error?.message || 'Blip not found'), 'error', 5000);
                 return;
             }
 
@@ -4142,7 +4084,7 @@ Use this only when:
             const report = allReports.find(r => r.id === reportId && r.reportType === reportType);
 
             if (!report) {
-                alert('Report not found');
+                adminToast('Report not found', 'error', 5000);
                 return;
             }
 
@@ -4779,7 +4721,8 @@ Use this only when:
 
         let verificationsLimit = PAGE_SIZE;
         async function loadVerifications() {
-            console.log('Loading verifications...');
+            document.getElementById('verificationsTable').innerHTML =
+                '<div class="no-results" style="color:#9C8F80;">Loading\u2026</div>';
             const { data: verifications, error } = await supabaseClient
                 .from('verification_applications')
                 .select(`
@@ -4923,7 +4866,7 @@ Use this only when:
                 <div class="user-detail-header">
                     ${verification.user?.avatar_url
                         ? `<img src="${verification.user.avatar_url}" class="user-detail-avatar">`
-                        : `<div class="user-detail-avatar" style="background: #261E18; color: #F2E9DA; color: #C2902F; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: bold;">${verification.user?.username?.charAt(0).toUpperCase() || '?'}</div>`
+                        : `<div class="user-detail-avatar" style="background: #261E18; color: #C2902F; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: bold;">${verification.user?.username?.charAt(0).toUpperCase() || '?'}</div>`
                     }
                     <div class="user-detail-info">
                         <h2>${verification.user?.display_name || verification.user?.username || 'N/A'}</h2>
@@ -5019,7 +4962,13 @@ Use this only when:
         }
 
         async function approveVerification(verificationId, userId, username) {
-            if (!confirm(`Approve verification for @${username}? They will receive a blue checkmark.`)) return;
+            const ok = await adminConfirm({
+                title: 'Approve verification',
+                message: `Approve verification for @${username}? They will receive a blue checkmark.`,
+                dangerLevel: 'neutral',
+                confirmLabel: 'Approve'
+            });
+            if (!ok) return;
 
             // Update user to verified
             const { error: userError } = await supabaseClient
@@ -5028,7 +4977,7 @@ Use this only when:
                 .eq('id', userId);
 
             if (userError) {
-                alert('Error verifying user: ' + userError.message);
+                adminToast('Error verifying user: ' + userError.message, 'error', 5000);
                 return;
             }
 
@@ -5043,14 +4992,14 @@ Use this only when:
                 .eq('id', verificationId);
 
             if (appError) {
-                alert('Error updating application: ' + appError.message);
+                adminToast('Error updating application: ' + appError.message, 'error', 5000);
                 return;
             }
 
             // Log the action
             await logAdminAction('verification_approved', userId, { verification_id: verificationId }, `Approved verification for @${username}`);
 
-            alert(`@${username} has been verified!`);
+            adminToast(`@${username} has been verified!`, 'success');
             closeVerificationDetail();
             loadVerifications();
             loadStats();
@@ -5058,7 +5007,13 @@ Use this only when:
         }
 
         async function rejectVerification(verificationId, username) {
-            const reason = prompt(`Why are you rejecting verification for @${username}?\n\nThis reason will be shown to the user.`);
+            const reason = await adminPrompt({
+                title: 'Reject verification',
+                message: `Why are you rejecting verification for @${username}?\n\nThis reason will be shown to the user.`,
+                placeholder: 'Rejection reason (visible to the user)',
+                multiline: true,
+                dangerLevel: 'warning'
+            });
             if (!reason) return;
 
             const verification = allVerifications.find(v => v.id === verificationId);
@@ -5074,13 +5029,13 @@ Use this only when:
                 .eq('id', verificationId);
 
             if (error) {
-                alert('Error: ' + error.message);
+                adminToast('Error: ' + error.message, 'error', 5000);
                 return;
             }
 
             await logAdminAction('verification_rejected', verification.user_id, { verification_id: verificationId, reason }, `Rejected verification for @${username}: ${reason}`);
 
-            alert(`Verification rejected for @${username}`);
+            adminToast(`Verification rejected for @${username}`, 'success');
             closeVerificationDetail();
             loadVerifications();
             loadStats();
@@ -5164,7 +5119,7 @@ Use this only when:
                 }
             } catch (error) {
                 console.error('Error initializing map:', error);
-                alert('Failed to initialize map. Please refresh the page.');
+                adminToast('Failed to initialize map. Please refresh the page.', 'error', 5000);
             }
         }
 
@@ -5834,22 +5789,22 @@ Use this only when:
                 const videoDurationSeconds = videoDurRaw ? parseInt(videoDurRaw) : null;
 
                 if (!title) {
-                    alert('Please enter a title');
+                    adminToast('Please enter a title', 'error', 5000);
                     return;
                 }
 
                 if (!selectedDropLocation) {
-                    alert('Please select a location on the map');
+                    adminToast('Please select a location on the map', 'error', 5000);
                     return;
                 }
 
                 if (!rewardAmount || rewardAmount < 0) {
-                    alert('Please enter a valid reward amount');
+                    adminToast('Please enter a valid reward amount', 'error', 5000);
                     return;
                 }
 
                 if (!radius || radius < 1) {
-                    alert('Please enter a valid radius');
+                    adminToast('Please enter a valid radius', 'error', 5000);
                     return;
                 }
 
@@ -5924,7 +5879,7 @@ Use this only when:
                 if (!response.ok) {
                     const errorData = await response.json();
                     console.error('Error creating drop:', errorData);
-                    alert('Failed to create drop: ' + (errorData.error || response.statusText));
+                    adminToast('Failed to create drop: ' + (errorData.error || response.statusText), 'error', 5000);
                     return;
                 }
 
@@ -6011,7 +5966,7 @@ Use this only when:
                 }
             } catch (error) {
                 console.error('[admin-coins] error creating drop:', error);
-                alert('Failed to create drop: ' + error.message);
+                adminToast('Failed to create drop: ' + error.message, 'error', 5000);
             }
         }
 
@@ -6069,7 +6024,7 @@ Use this only when:
 
                 if (error) {
                     console.error('Error loading drops:', error);
-                    alert('Failed to load drops: ' + error.message);
+                    adminToast('Failed to load drops: ' + error.message, 'error', 5000);
                     return;
                 }
 
@@ -6084,7 +6039,7 @@ Use this only when:
                 }
             } catch (error) {
                 console.error('Error loading admin drops:', error);
-                alert('Failed to load drops: ' + error.message);
+                adminToast('Failed to load drops: ' + error.message, 'error', 5000);
             }
         }
 
@@ -6594,20 +6549,26 @@ Use this only when:
 
                 if (error) {
                     console.error('Error toggling drop status:', error);
-                    alert('Failed to toggle drop status: ' + error.message);
+                    adminToast('Failed to toggle drop status: ' + error.message, 'error', 5000);
                     return;
                 }
 
-                alert(`Drop ${isActive ? 'activated' : 'deactivated'} successfully!`);
+                adminToast(`Drop ${isActive ? 'activated' : 'deactivated'} successfully!`, 'success');
                 loadAdminDrops();
             } catch (error) {
                 console.error('Error toggling drop status:', error);
-                alert('Failed to toggle drop status: ' + error.message);
+                adminToast('Failed to toggle drop status: ' + error.message, 'error', 5000);
             }
         }
 
         async function deleteAdminDrop(dropId) {
-            if (!confirm('Are you sure you want to delete this drop? This action cannot be undone.')) {
+            const ok = await adminConfirm({
+                title: 'Delete drop?',
+                message: 'Are you sure you want to delete this drop? This action cannot be undone.',
+                dangerLevel: 'destructive',
+                confirmLabel: 'Delete'
+            });
+            if (!ok) {
                 return;
             }
 
@@ -6619,15 +6580,15 @@ Use this only when:
 
                 if (error) {
                     console.error('Error deleting drop:', error);
-                    alert('Failed to delete drop: ' + error.message);
+                    adminToast('Failed to delete drop: ' + error.message, 'error', 5000);
                     return;
                 }
 
-                alert('Drop deleted successfully!');
+                adminToast('Drop deleted successfully!', 'success');
                 loadAdminDrops();
             } catch (error) {
                 console.error('Error deleting drop:', error);
-                alert('Failed to delete drop: ' + error.message);
+                adminToast('Failed to delete drop: ' + error.message, 'error', 5000);
             }
         }
 
@@ -8085,25 +8046,37 @@ Use this only when:
         }
 
         async function restoreDeletedBlip(blipId) {
-            if (!confirm('Restore this blip? It will reappear on the map and the owner\'s profile.')) return;
+            const ok = await adminConfirm({
+                title: 'Restore blip?',
+                message: 'Restore this blip? It will reappear on the map and the owner\'s profile.',
+                dangerLevel: 'warning',
+                confirmLabel: 'Restore'
+            });
+            if (!ok) return;
             const { data, error } = await supabaseClient.rpc('admin_restore_blip', { p_blip_id: blipId });
-            if (error) { alert('Restore failed: ' + error.message); return; }
-            if (!data) { alert('Nothing restored — the blip may already be purged.'); }
+            if (error) { adminToast('Restore failed: ' + error.message, 'error', 5000); return; }
+            if (!data) { adminToast('Nothing restored — the blip may already be purged.', 'info'); }
             loadDeletedBlips();
         }
 
         async function purgeDeletedBlipNow(blipId) {
-            if (!confirm('Purge this blip on tonight\'s run? The video files and all data will be permanently deleted. This cannot be undone.')) return;
+            const ok = await adminConfirm({
+                title: 'Purge blip tonight?',
+                message: 'Purge this blip on tonight\'s run? The video files and all data will be permanently deleted. This cannot be undone.',
+                dangerLevel: 'destructive',
+                confirmLabel: 'Purge tonight'
+            });
+            if (!ok) return;
             const { data, error } = await supabaseClient.rpc('admin_purge_blip_now', { p_blip_id: blipId });
-            if (error) { alert('Purge scheduling failed: ' + error.message); return; }
-            if (!data) { alert('Nothing changed — the blip may already be purged.'); }
+            if (error) { adminToast('Purge scheduling failed: ' + error.message, 'error', 5000); return; }
+            if (!data) { adminToast('Nothing changed — the blip may already be purged.', 'info'); }
             loadDeletedBlips();
         }
 
         async function extendDeletedBlip(blipId) {
             const { data, error } = await supabaseClient.rpc('admin_extend_blip_retention', { p_blip_id: blipId, p_days: 7 });
-            if (error) { alert('Extend failed: ' + error.message); return; }
-            if (!data) { alert('Nothing changed — the blip may already be purged.'); }
+            if (error) { adminToast('Extend failed: ' + error.message, 'error', 5000); return; }
+            if (!data) { adminToast('Nothing changed — the blip may already be purged.', 'info'); }
             loadDeletedBlips();
         }
 
@@ -8123,37 +8096,6 @@ Use this only when:
             if (h > 0) return `in ${h}h ${m}m`;
             return `in ${m}m`;
         }
-
-        // Emoji picker functions
-        function openEmojiPicker() {
-            const picker = document.getElementById('emojiPicker');
-            picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
-        }
-
-        function insertEmoji(emoji) {
-            const textarea = document.getElementById('dropNotificationMessage');
-            const cursorPos = textarea.selectionStart;
-            const textBefore = textarea.value.substring(0, cursorPos);
-            const textAfter = textarea.value.substring(cursorPos);
-            textarea.value = textBefore + emoji + textAfter;
-            textarea.selectionStart = cursorPos + emoji.length;
-            textarea.selectionEnd = cursorPos + emoji.length;
-            textarea.focus();
-
-            // Close picker
-            document.getElementById('emojiPicker').style.display = 'none';
-        }
-
-        // Close emoji picker when clicking outside
-        document.addEventListener('click', function(event) {
-            const picker = document.getElementById('emojiPicker');
-            const emojiButton = event.target.closest('button[onclick="openEmojiPicker()"]');
-            const emojiPickerButton = event.target.closest('button[onclick^="insertEmoji"]');
-
-            if (!emojiButton && !emojiPickerButton && picker && !picker.contains(event.target)) {
-                picker.style.display = 'none';
-            }
-        });
 
         // Check if already logged in.
         // Re-verify is_admin on every page load — admin-login.html checks it
