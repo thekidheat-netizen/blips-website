@@ -48,10 +48,37 @@
                 </div>
             </div>
             <div class="hero-image">
-                <img src="/assets/hero-app.jpg"
-                     alt="The Blips iOS app pinning a video to the Colosseum in Rome — drop a video anywhere in the world"
-                     class="hero-shot">
+                <div class="hero-carousel" id="heroCarousel">
+                    <img src="/assets/hero-1.jpg" class="slide active" alt="Blips map of video moments near you">
+                    <img src="/assets/hero-2.jpg" class="slide" alt="Drop a video anywhere in the world">
+                    <img src="/assets/hero-3.jpg" class="slide" alt="Be there in person to unlock it">
+                    <img src="/assets/hero-4.jpg" class="slide" alt="Watch what happened, right where it happened">
+                    <img src="/assets/hero-5.jpg" class="slide" alt="Schedule videos to post later">
+                    <img src="/assets/hero-6.jpg" class="slide" alt="Make an announcement or see what's happening around you">
+                    <button class="car-arrow left" aria-label="Previous screenshot" onclick="heroNav(-1)">&#8249;</button>
+                    <button class="car-arrow right" aria-label="Next screenshot" onclick="heroNav(1)">&#8250;</button>
+                    <div class="car-dots" id="heroDots"></div>
+                </div>
             </div>
+            <script>
+                (function() {
+                    const slides = [...document.querySelectorAll('#heroCarousel .slide')];
+                    const dotsBox = document.getElementById('heroDots');
+                    let idx = 0, timer = null;
+                    dotsBox.innerHTML = slides.map((_, i) =>
+                        `<span class="dot${i === 0 ? ' on' : ''}" onclick="heroGo(${i})"></span>`).join('');
+                    const dots = [...dotsBox.children];
+                    function show(n) {
+                        idx = (n + slides.length) % slides.length;
+                        slides.forEach((s, i) => s.classList.toggle('active', i === idx));
+                        dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+                    }
+                    function auto() { clearInterval(timer); timer = setInterval(() => show(idx + 1), 4000); }
+                    window.heroNav = (d) => { show(idx + d); auto(); };
+                    window.heroGo = (n) => { show(n); auto(); };
+                    auto();
+                })();
+            </script>
         </div>
     </section>
 
