@@ -576,9 +576,10 @@
             $('cmdkResults').innerHTML = '<div class="hint">Searching…</div>';
             // Server-side search across ALL users (legacy tab search only
             // filtered the currently-loaded page).
-            const { data, error } = await sb.rpc('admin_search_users', { p_query: q, p_limit: 12 });
+            const { data: allHits, error } = await sb.rpc('admin_search_users', { p_query: q });
+            const data = (allHits || []).slice(0, 12);
             if (error) { $('cmdkResults').innerHTML = `<div class="hint">Search failed: ${esc(error.message)}</div>`; return; }
-            if (!data || !data.length) { $('cmdkResults').innerHTML = '<div class="hint">No users found</div>'; return; }
+            if (!data.length) { $('cmdkResults').innerHTML = '<div class="hint">No users found</div>'; return; }
             $('cmdkResults').innerHTML = data.map((u, i) => `
                 <div class="hit ${i===0?'sel':''}" onclick="ui.closeCmdK(); openUser('${jsEsc(u.id)}')">
                     ${avatarHtml(u.avatar_url, u.username, 30)}
