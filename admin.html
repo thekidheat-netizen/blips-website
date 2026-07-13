@@ -639,16 +639,27 @@
 
         // Startup gate — same behavior as legacy: re-verify is_admin on every
         // load; a non-admin session gets signed out.
-        sb.auth.getSession().then(async ({ data: { session } }) => {
-            if (!session) return;
-            const row = await verifyAdminSession(session);
-            if (!row) {
-                console.warn('Non-admin session — signing out');
-                await sb.auth.signOut();
-                return;
-            }
-            enterApp(session, row);
-        });
+        // DEFERRED to DOMContentLoaded: getSession() resolves from local
+        // storage (no network) — fast enough to beat the module <script>
+        // tags below, which made buildSidebar run before most routes had
+        // registered (sidebar showed only Dashboard, a millisecond race).
+        function bootFromSession() {
+            sb.auth.getSession().then(async ({ data: { session } }) => {
+                if (!session) return;
+                const row = await verifyAdminSession(session);
+                if (!row) {
+                    console.warn('Non-admin session — signing out');
+                    await sb.auth.signOut();
+                    return;
+                }
+                enterApp(session, row);
+            });
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bootFromSession);
+        } else {
+            bootFromSession();
+        }
 
         // openUser is provided by users.js (window.__openUser); this shim lets
         // any module reference it before that script evaluates.
