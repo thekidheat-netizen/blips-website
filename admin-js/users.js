@@ -161,7 +161,10 @@
     function statusPills(u) {
         const pills = [];
         if (u.deleted_at) pills.push(`<span class="pill muted" title="Soft-deleted ${esc(fmtDate(u.deleted_at))}">DELETED</span>`);
-        if (u.is_banned) pills.push('<span class="pill danger">BANNED</span>');
+        // is_banned is ALSO set mechanically by account deletion (it locks the
+        // account during the retention window) — only show BANNED for real
+        // moderation bans, i.e. banned WITHOUT being deleted.
+        if (u.is_banned && !u.deleted_at) pills.push('<span class="pill danger">BANNED</span>');
         if (u.is_verified) pills.push('<span class="pill gold">VERIFIED</span>');
         if (u.is_admin) pills.push('<span class="pill info">ADMIN</span>');
         if (!pills.length) pills.push('<span class="pill ok">ACTIVE</span>');
