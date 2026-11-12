@@ -179,9 +179,27 @@
                         ? `📍 ${blip.latitude.toFixed(6)}, ${blip.longitude.toFixed(6)} · <a href="https://www.google.com/maps?q=${blip.latitude},${blip.longitude}" target="_blank" rel="noopener" style="color:var(--info);">View on Google Maps</a>`
                         : 'No location data'}</div>
                     <div class="k">Views</div><div class="v">👁️ ${blip.views_count || 0} views</div>
-                    <div class="k">Visibility</div><div class="v">${blip.is_public ? '🌍 Public' : '🔒 Private'}</div>
+                    <div class="k">Visibility</div><div class="v">${
+                        blip.visibility === 'public' ? '🌍 Public'
+                        : blip.visibility === 'friends_only' ? '👥 Friends Only'
+                        : blip.visibility === 'direct' ? '🎯 Direct (specific people)'
+                        : blip.visibility === 'private' ? '🔒 Private'
+                        : esc(blip.visibility || (blip.is_public ? 'public' : 'private'))}</div>
                     <div class="k">ID</div><div class="v" style="font-family:monospace; font-size:12px;">${esc(blip.id)}</div>
                     ${blip.soft_deleted_at ? `<div class="k">Soft-deleted</div><div class="v"><span class="pill muted">DELETED</span> ${esc(fmtDate(blip.soft_deleted_at))}</div>` : ''}
+                </div>
+            </div>
+
+            <div class="sect">
+                <h4>Change visibility</h4>
+                <p class="pagesub" style="margin:4px 0 10px;">Recategorize this blip for the user. Converting a direct blip also clears its recipients.</p>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    ${['public', 'friends_only', 'private'].map((v) => `
+                        <button class="btn sm ${blip.visibility === v ? 'gold' : ''}"
+                                ${blip.visibility === v ? 'disabled' : ''}
+                                onclick="b_setVisibility('${jsEsc(blip.id)}', '${v}', '@${jsEsc(blip.users?.username || 'Unknown')}', '${jsEsc(blip.visibility || '')}')">
+                            ${v === 'public' ? '🌍 Public' : v === 'friends_only' ? '👥 Friends Only' : '🔒 Private'}
+                        </button>`).join('')}
                 </div>
             </div>
 
@@ -193,6 +211,41 @@
         ui.drawer({ title: 'Blip detail', html });
     }
     window.b_openBlip = openBlipDetail;
+
+    // ── Change visibility (admin recategorize) ────────────────────────
+    // Uses the admin_set_blip_visibility SECURITY DEFINER RPC (same pattern
+    // as admin_delete_blip): verifies the caller is an admin server-side,
+    // keeps is_public in sync, and clears blip_recipients when converting
+    // away from a direct blip.
+    window.b_setVisibility = async function (blipId, newVisibility, username, oldVisibility) {
+        const label = newVisibility === 'public' ? 'Public'
+            : newVisibility === 'friends_only' ? 'Friends Only' : 'Private';
+        const ok = await ui.confirm({
+            title: `Make ${username}'s blip ${label}?`,
+            message: `Visibility changes immediately for all users.`
+                + (oldVisibility === 'direct' ? `\n\nThis is currently a DIRECT blip — its recipients will be cleared.` : '')
+                + (newVisibility === 'public' && oldVisibility !== 'public' ? `\n\nThis will make the blip visible to EVERYONE.` : ''),
+            confirmLabel: `Make ${label}`,
+        });
+        if (!ok) return;
+
+        const { error } = await sb.rpc('admin_set_blip_visibility', {
+            p_blip_id: blipId,
+            p_visibility: newVisibility,
+        });
+        if (error) {
+            ui.toast('Visibility change failed: ' + error.message, 'error', 5000);
+            return;
+        }
+
+        await logAdminAction('set_blip_visibility', null,
+            { blip_id: blipId, from: oldVisibility, to: newVisibility },
+            `Set blip by ${username} to ${newVisibility}`);
+        ui.toast(`Blip is now ${label}`, 'success');
+        cache.bust('users');
+        // Re-open the drawer so the detail reflects the new state.
+        openBlipDetail(blipId);
+    };
 
     // ── Delete (ported from legacy deleteBlipFromDetail) ──────────────
     window.b_deleteBlip = async function (blipId, username) {
